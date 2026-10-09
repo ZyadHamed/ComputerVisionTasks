@@ -10,6 +10,11 @@ from Backend.Services.EdgeDetectionService import (
     RobertsEdgeDetection,
     CannyEdgeDetection
 )
+from Backend.Services.FrequencyFiltersService import (
+    LowPassFilter,
+    HighPassFilter
+)
+from Backend.Services.HybridImageService import create_hybrid_image
 
 from Backend.Services.UtilitiesService import (
     TransformIntoGrayScale,
@@ -195,6 +200,63 @@ async def normalize_image(file: UploadFile = File(...)):
 
     result = NormalizeImage(image)
 
+    return process_image(result)
+
+
+@app.post("/frequency-filter/low-pass")
+async def low_pass_frequency_filter(
+    file: UploadFile = File(...),
+    radius: int = Form(30)
+):
+    if radius <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="radius must be greater than zero."
+        )
+
+    image = await read_uploaded_image(file)
+    result = LowPassFilter(image, radius=radius)
+    return process_image(result)
+
+
+@app.post("/frequency-filter/high-pass")
+async def high_pass_frequency_filter(
+    file: UploadFile = File(...),
+    radius: int = Form(30)
+):
+    if radius <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="radius must be greater than zero."
+        )
+
+    image = await read_uploaded_image(file)
+    result = HighPassFilter(image, radius=radius)
+    return process_image(result)
+
+
+@app.post("/image/hybrid")
+async def hybrid_image(
+    file1: UploadFile = File(...),
+    file2: UploadFile = File(...),
+    radius: int = Form(30)
+):
+    if radius <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="radius must be greater than zero."
+        )
+
+    image1 = await read_uploaded_image(file1, convert_to_grayscale=False)
+    image2 = await read_uploaded_image(file2, convert_to_grayscale=False)
+
+    if image1.shape[:2] != image2.shape[:2]:
+        raise HTTPException(
+            status_code=400,
+            detail="Both images must have the same dimensions."
+        )
+
+    result = create_hybrid_image(image1, image2, radius=radius)
     return process_image(result)
 
 
