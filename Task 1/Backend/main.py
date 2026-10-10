@@ -21,6 +21,10 @@ from Backend.Services.UtilitiesService import (
     NormalizeImage
 )
 
+from Backend.Services.NoiseService import add_noise
+
+from Backend.Services.FiltersService import low_pass_filter
+
 app = FastAPI()
 
 
@@ -84,6 +88,63 @@ async def read_uploaded_image(file: UploadFile, convert_to_grayscale = True) -> 
 
     return image
 
+@app.post("/filters/low-pass")
+async def low_pass(
+    file: UploadFile = File(...),
+    filter_type: str = Form("Average"),
+    kernel_size: int = Form(3),
+    sigma: float = Form(1.0)
+):
+    if filter_type not in {"Average", "Gaussian", "Median"}:
+        raise HTTPException(
+            status_code=422,
+            detail="filter_type must be 'Average', 'Gaussian', or 'Median'."
+        )
+
+    if kernel_size < 3 or kernel_size % 2 == 0:
+        raise HTTPException(
+            status_code=422,
+            detail="kernel_size must be an odd number of at least 3."
+        )
+
+    if sigma <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="sigma must be greater than zero."
+        )
+
+    image = await read_uploaded_image(file, convert_to_grayscale=False)
+    result = low_pass_filter(image, filter_type, kernel_size, sigma)
+    return process_image(result)
+
+@app.post("/image/noise")
+async def add_image_noise(
+    file: UploadFile = File(...),
+    noise_type: str = Form("Gaussian"),
+    mean: float = Form(0),
+    sigma: float = Form(25),
+    low: float = Form(-50),
+    high: float = Form(50),
+    p: float = Form(0.05)
+):
+    if noise_type not in {"Gaussian", "Uniform", "Salt and Pepper"}:
+        raise HTTPException(
+            status_code=422,
+            detail="noise_type must be 'Gaussian', 'Uniform', or 'Salt and Pepper'."
+        )
+
+    if sigma <= 0:
+        raise HTTPException(status_code=422, detail="sigma must be greater than zero.")
+
+    if low >= high:
+        raise HTTPException(status_code=422, detail="low must be less than high.")
+
+    if not 0 <= p <= 1:
+        raise HTTPException(status_code=422, detail="p must be between 0 and 1.")
+
+    image = await read_uploaded_image(file, convert_to_grayscale=False)
+    result = add_noise(image, noise_type, mean, sigma, low, high, p)
+    return process_image(result)
 
 @app.post("/edge-detection/sobel")
 async def sobel(

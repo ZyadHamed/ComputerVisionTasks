@@ -1,6 +1,4 @@
 import numpy as np
-import cv2 as cv
-
 
 def salt_and_pepper(img, p=0.05):
 
@@ -31,8 +29,3 @@ def add_noise(img, noise_type,  mean=0, sigma=25, low=-50, high=50, p=0.05):
   noisy_image = img_float + noise
   clipped_image = np.clip(noisy_image,0, 255).astype(np.uint8)
   return clipped_image
-
-img = cv.imread(r'Task 1\Samples\Edges_test.jpg')
-noisy = add_noise(img, 'Salt and Pepper', p=0.02)
-cv.imshow('noisy', noisy)
-cv.waitKey(0)
