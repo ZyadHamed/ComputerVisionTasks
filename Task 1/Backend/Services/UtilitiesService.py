@@ -71,13 +71,15 @@ def NormalizeImage(img: np.array):
   normalized_image = 255 * ((img - min_val) / (max_val - min_val))
   return normalized_image.astype("uint8")
 
-def TransformIntoGrayScale(rgbImg: np.array, mode: str):
+def TransformIntoGrayScale(rgbImg: np.ndarray, mode: str):
+
+    img = rgbImg.astype(np.float32)
 
     if mode == "weighted":
-        gray_image = (0.2989 * rgbImg[:, :, 0] + 0.5870 * rgbImg[:, :, 1] + 0.1140 * rgbImg[:, :, 2])
+        gray_image = 0.2989 * img[:, :, 0] + 0.5870 * img[:, :, 1] + 0.1140 * img[:, :, 2]
 
     elif mode == "average":
-        gray_image = (rgbImg[:, :, 0] + rgbImg[:, :, 1] + rgbImg[:, :, 2]) / 3
+        gray_image = (img[:, :, 0] + img[:, :, 1] + img[:, :, 2]) / 3
 
     else:
         raise ValueError("Mode must be either 'weighted' or 'average'")
