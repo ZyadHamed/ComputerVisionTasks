@@ -1,15 +1,16 @@
 import numpy as np
 from .UtilitiesService import ConvolveImage
+from .FiltersService import low_pass_filter
 import cv2
 
 sobel_kernel_x = np.array([[-1, 0, 1],
-                  [-2, 0, 2],
-                  [-1, 0, 1]],
-                  dtype=np.float64)
+                           [-2, 0, 2],
+                           [-1, 0, 1]],
+                          dtype=np.float64)
 sobel_kernel_y = np.array([[-1, -2, -1],
-                  [0, 0, 0],
-                  [1, 2, 1]],
-                  dtype=np.float64)
+                           [0, 0, 0],
+                           [1, 2, 1]],
+                          dtype=np.float64)
 
 prewitt_kernel_x = np.array([
     [-1, 0, 1],
@@ -34,60 +35,47 @@ roberts_kernel_y = np.array([
 ], dtype=np.float64)
 
 
-
 def _prepare_image(image: np.ndarray, apply_blur: bool, sigma: float):
     if apply_blur:
-        image = cv2.GaussianBlur(
-            image,
-            ksize=(0, 0),  # Kernel size determined by sigma
-            sigmaX=sigma
-        )
+        image = low_pass_filter(image, filter_type="Gaussian", kernel_size=3, sigma=sigma)
     return image
+
+
+def _gradient_magnitude(image, kernel_x, kernel_y, manual):
+    G_x = ConvolveImage(image, kernel_x, manual=manual)
+    G_y = ConvolveImage(image, kernel_y, manual=manual)
+    gradient = np.sqrt(G_x**2 + G_y**2)
+    return np.clip(gradient, 0, 255).astype(np.uint8)
 
 
 def SobelEdgeDetection(
     image: np.ndarray,
     apply_blur: bool = False,
-    sigma: float = 1.0
+    sigma: float = 1.0,
+    manual: bool = False
 ):
     image = _prepare_image(image, apply_blur, sigma)
-
-    G_x = ConvolveImage(image, sobel_kernel_x)
-    G_y = ConvolveImage(image, sobel_kernel_y)
-
-    gradient = np.sqrt(G_x**2 + G_y**2)
-
-    return np.clip(gradient, 0, 255).astype(np.uint8)
+    return _gradient_magnitude(image, sobel_kernel_x, sobel_kernel_y, manual)
 
 
 def PrewittEdgeDetection(
     image: np.ndarray,
     apply_blur: bool = False,
-    sigma: float = 1.0
+    sigma: float = 1.0,
+    manual: bool = False
 ):
     image = _prepare_image(image, apply_blur, sigma)
-
-    G_x = ConvolveImage(image, prewitt_kernel_x)
-    G_y = ConvolveImage(image, prewitt_kernel_y)
-
-    gradient = np.sqrt(G_x**2 + G_y**2)
-
-    return np.clip(gradient, 0, 255).astype(np.uint8)
+    return _gradient_magnitude(image, prewitt_kernel_x, prewitt_kernel_y, manual)
 
 
 def RobertsEdgeDetection(
     image: np.ndarray,
     apply_blur: bool = False,
-    sigma: float = 1.0
+    sigma: float = 1.0,
+    manual: bool = False
 ):
     image = _prepare_image(image, apply_blur, sigma)
-
-    G_x = ConvolveImage(image, roberts_kernel_x)
-    G_y = ConvolveImage(image, roberts_kernel_y)
-
-    gradient = np.sqrt(G_x**2 + G_y**2)
-
-    return np.clip(gradient, 0, 255).astype(np.uint8)
+    return _gradient_magnitude(image, roberts_kernel_x, roberts_kernel_y, manual)
 
 
 def CannyEdgeDetection(
@@ -96,24 +84,19 @@ def CannyEdgeDetection(
     threshold2: int = 200,
     apply_blur: bool = False,
     sigma: float = 1.0,
-    threshold_mode: str = "manual"
+    threshold_mode: str = "manual",
+    manual: bool = False 
 ):
     image = _prepare_image(image, apply_blur, sigma)
 
     image = image.astype(np.uint8)
 
     if threshold_mode == "image_percentile":
-        threshold1, threshold2 = np.percentile(
-            image, [25, 75]
-        )
+        threshold1, threshold2 = np.percentile(image, [25, 75])
 
     elif threshold_mode == "gradient_percentile":
-        
-        gradient_magnitude = SobelEdgeDetection(image)
-
-        threshold1, threshold2 = np.percentile(
-            gradient_magnitude, [25, 75]
-        )
+        gradient_magnitude = SobelEdgeDetection(image, manual=manual)
+        threshold1, threshold2 = np.percentile(gradient_magnitude, [25, 75])
 
     elif threshold_mode != "manual":
         raise ValueError(

@@ -165,7 +165,8 @@ async def add_image_noise(
 async def sobel(
     file: UploadFile = File(...),
     apply_blur: bool = Form(False),
-    sigma: float = Form(1.0)
+    sigma: float = Form(1.0),
+    manual: bool = Form(True)
 ):
     image = await read_uploaded_image(file)
 
@@ -175,7 +176,7 @@ async def sobel(
             detail="sigma must be greater than zero."
         )
 
-    result = SobelEdgeDetection(image, apply_blur, sigma)
+    result = SobelEdgeDetection(image, apply_blur, sigma, manual=manual)
     return process_image(result)
 
 
@@ -183,7 +184,8 @@ async def sobel(
 async def prewitt(
     file: UploadFile = File(...),
     apply_blur: bool = Form(False),
-    sigma: float = Form(1.0)
+    sigma: float = Form(1.0),
+    manual: bool = Form(True)
 ):
     image = await read_uploaded_image(file)
 
@@ -193,7 +195,7 @@ async def prewitt(
             detail="sigma must be greater than zero."
         )
 
-    result = PrewittEdgeDetection(image, apply_blur, sigma)
+    result = PrewittEdgeDetection(image, apply_blur, sigma, manual=manual)
     return process_image(result)
 
 
@@ -201,7 +203,8 @@ async def prewitt(
 async def roberts(
     file: UploadFile = File(...),
     apply_blur: bool = Form(False),
-    sigma: float = Form(1.0)
+    sigma: float = Form(1.0),
+    manual: bool = Form(True)
 ):
     image = await read_uploaded_image(file)
 
@@ -211,9 +214,8 @@ async def roberts(
             detail="sigma must be greater than zero."
         )
 
-    result = RobertsEdgeDetection(image, apply_blur, sigma)
+    result = RobertsEdgeDetection(image, apply_blur, sigma, manual=manual)
     return process_image(result)
-
 
 
 @app.post("/edge-detection/canny")
@@ -223,7 +225,8 @@ async def canny(
     threshold1: int = Form(100),
     threshold2: int = Form(200),
     apply_blur: bool = Form(False),
-    sigma: float = Form(1.0)
+    sigma: float = Form(1.0),
+    manual: bool = Form(True)
 ):
     image = await read_uploaded_image(file)
 
@@ -265,7 +268,8 @@ async def canny(
         threshold2,
         apply_blur,
         sigma,
-        threshold_mode=threshold_mode
+        threshold_mode=threshold_mode,
+        manual=manual
     )
 
     return process_image(result)
@@ -279,19 +283,34 @@ async def normalize_image(file: UploadFile = File(...)):
     return process_image(result)
 
 
-@app.post("/frequency-filter/low-pass")
-async def low_pass_frequency_filter(
+@app.post("/filters/low-pass")
+async def low_pass(
     file: UploadFile = File(...),
-    radius: int = Form(30)
+    filter_type: str = Form("Average"),
+    kernel_size: int = Form(3),
+    sigma: float = Form(1.0),
+    manual: bool = Form(False)
 ):
-    if radius <= 0:
+    if filter_type not in {"Average", "Gaussian", "Median"}:
         raise HTTPException(
             status_code=422,
-            detail="radius must be greater than zero."
+            detail="filter_type must be 'Average', 'Gaussian', or 'Median'."
         )
 
-    image = await read_uploaded_image(file)
-    result = LowPassFilter(image, radius=radius)
+    if kernel_size < 3 or kernel_size % 2 == 0:
+        raise HTTPException(
+            status_code=422,
+            detail="kernel_size must be an odd number of at least 3."
+        )
+
+    if sigma <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="sigma must be greater than zero."
+        )
+
+    image = await read_uploaded_image(file, convert_to_grayscale=False)
+    result = low_pass_filter(image, filter_type, kernel_size, sigma, manual=manual)
     return process_image(result)
 
 
