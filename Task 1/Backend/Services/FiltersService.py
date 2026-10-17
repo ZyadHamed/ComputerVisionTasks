@@ -1,4 +1,4 @@
-from UtilitiesService import ConvolveImage
+from .UtilitiesService import ConvolveImage
 import numpy as np
 
 

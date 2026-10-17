@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 import numpy as np
 import cv2
 from io import BytesIO
@@ -24,6 +24,8 @@ from Backend.Services.UtilitiesService import (
 from Backend.Services.NoiseService import add_noise
 
 from Backend.Services.FiltersService import low_pass_filter
+
+from Backend.Services.HistogramService import Histogram
 
 app = FastAPI()
 
@@ -116,6 +118,19 @@ async def low_pass(
     image = await read_uploaded_image(file, convert_to_grayscale=False)
     result = low_pass_filter(image, filter_type, kernel_size, sigma)
     return process_image(result)
+
+
+async def read_image_for_histogram(file: UploadFile, grayscale: bool) -> np.ndarray:
+    """Load an image as uint8, with no alpha channel, ready for Histogram."""
+    image = await read_uploaded_image(file, convert_to_grayscale=grayscale)
+
+    # Drop alpha so the image is either (H, W) or (H, W, 3)
+    if image.ndim == 3 and image.shape[2] == 4:
+        image = image[..., :3]
+
+    return np.clip(image, 0, 255).astype(np.uint8)
+
+
 
 @app.post("/image/noise")
 async def add_image_noise(
@@ -347,4 +362,68 @@ async def grayscale_image(
 
     result = TransformIntoGrayScale(image, mode)
 
+    return process_image(result)
+
+
+
+@app.post("/histogram/data")
+async def histogram_data(
+    file: UploadFile = File(...),
+    grayscale: bool = Form(False)
+):
+    """Frequency, PDF, CDF and equalization mapping as JSON."""
+    image = await read_image_for_histogram(file, grayscale)
+    hist = Histogram(image)
+
+    frequency = hist.frequency()
+    x_new = hist.equalized_level(frequency)
+    x_eq, y_eq = hist.equalize_histogram(frequency, x_new)
+
+    return {
+        "is_rgb": hist.is_rgb,
+        "channels": ["red", "green", "blue"] if hist.is_rgb else ["gray"],
+        "levels": list(range(Histogram.LEVELS)),
+        "frequency": frequency.tolist(),
+        "pdf": hist.pdf(frequency).tolist(),
+        "cdf": hist.cdf(frequency).tolist(),
+        "equalized_level": x_new.tolist(),
+        "equalized_frequency": y_eq.tolist()
+    }
+
+
+@app.post("/histogram/graph")
+async def histogram_graph(
+    file: UploadFile = File(...),
+    graph_type: str = Form("histogram"),
+    grayscale: bool = Form(False)
+):
+    """Returns a PNG plot: histogram, pdf, cdf, or equalized."""
+    if graph_type not in {"histogram", "pdf", "cdf", "equalized"}:
+        raise HTTPException(
+            status_code=422,
+            detail="graph_type must be 'histogram', 'pdf', 'cdf', or 'equalized'."
+        )
+
+    image = await read_image_for_histogram(file, grayscale)
+    hist = Histogram(image)
+
+    plot_methods = {
+        "histogram": hist.graph,
+        "pdf": hist.graph_pdf,
+        "cdf": hist.graph_cdf,
+        "equalized": hist.graph_equalized
+    }
+
+    png_bytes = plot_methods[graph_type]()
+    return Response(content=png_bytes, media_type="image/png")
+
+
+@app.post("/histogram/equalize")
+async def histogram_equalize(
+    file: UploadFile = File(...),
+    grayscale: bool = Form(False)
+):
+    """Returns the histogram-equalized image as PNG."""
+    image = await read_image_for_histogram(file, grayscale)
+    result = Histogram(image).equalize_image()
     return process_image(result)
