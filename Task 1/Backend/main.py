@@ -313,6 +313,20 @@ async def low_pass(
     result = low_pass_filter(image, filter_type, kernel_size, sigma, manual=manual)
     return process_image(result)
 
+@app.post("/frequency-filter/low-pass")
+async def low_pass_frequency_filter(
+    file: UploadFile = File(...),
+    radius: int = Form(30)
+):
+    if radius <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="radius must be greater than zero."
+        )
+
+    image = await read_uploaded_image(file, convert_to_grayscale=False)
+    result = LowPassFilter(image, radius=radius)
+    return process_image(result)
 
 @app.post("/frequency-filter/high-pass")
 async def high_pass_frequency_filter(
@@ -334,7 +348,9 @@ async def high_pass_frequency_filter(
 async def hybrid_image(
     file1: UploadFile = File(...),
     file2: UploadFile = File(...),
-    radius: int = Form(30)
+    radius: int = Form(30),
+    low_pass_coefficient: float = Form(0.8),
+    high_pass_coefficient: float = Form(0.2)
 ):
     if radius <= 0:
         raise HTTPException(
@@ -342,6 +358,11 @@ async def hybrid_image(
             detail="radius must be greater than zero."
         )
 
+    if((low_pass_coefficient + high_pass_coefficient) != 1):
+        raise HTTPException(
+            status_code=422,
+            detail="Sum of coefficients must be 1"
+        ) 
     image1 = await read_uploaded_image(file1, convert_to_grayscale=False)
     image2 = await read_uploaded_image(file2, convert_to_grayscale=False)
 
@@ -351,7 +372,7 @@ async def hybrid_image(
             detail="Both images must have the same dimensions."
         )
 
-    result = create_hybrid_image(image1, image2, radius=radius)
+    result = create_hybrid_image(image1, image2, radius=radius, low_pass_coeff=low_pass_coefficient, high_pass_coeff=high_pass_coefficient)
     return process_image(result)
 
 

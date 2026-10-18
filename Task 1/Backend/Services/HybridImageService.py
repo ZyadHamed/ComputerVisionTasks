@@ -1,9 +1,10 @@
 from .FrequencyFiltersService import LowPassFilter, HighPassFilter
+from .UtilitiesService import NormalizeImage
 import cv2
 import numpy as np
 
 
-def create_hybrid_image(image1: np.ndarray, image2: np.ndarray, radius: int = 30) -> np.ndarray:
+def create_hybrid_image(image1: np.ndarray, image2: np.ndarray, radius: int = 30, low_pass_coeff = 0.5, high_pass_coeff = 0.5) -> np.ndarray:
     """Create a hybrid image by combining the low-frequency content of image1 with the high-frequency content of image2."""
     if image1 is None or image2 is None:
         raise ValueError("Both images must not be None.")
@@ -26,7 +27,8 @@ def create_hybrid_image(image1: np.ndarray, image2: np.ndarray, radius: int = 30
     low_freq_image = LowPassFilter(image1, radius=radius)
     high_freq_image = HighPassFilter(image2, radius=radius)
 
-    hybrid_image = low_freq_image + high_freq_image
+    hybrid_image = low_pass_coeff * low_freq_image + high_pass_coeff * high_freq_image
+    hybrid_image = NormalizeImage(hybrid_image)
     return np.clip(hybrid_image, 0, 255).astype(np.uint8)
 
 

@@ -9,8 +9,12 @@ def create_gaussian_mask(shape, radius: int = 30, center=None):
         center = (rows / 2, cols / 2)
 
     sigma = max(radius / 3.0, 1.0)
-    y, x = np.ogrid[:rows, :cols]
-    distance = ((x - center[1]) ** 2 + (y - center[0]) ** 2) / (2 * sigma ** 2)
+    half_rows = rows // 2
+    half_columns = cols // 2
+    offset_rows = np.arange(-half_rows, half_rows)  # position of each column relative to the center
+    offset_columns = np.arange(-half_columns, half_columns)
+    x, y = np.meshgrid(offset_columns, offset_rows)
+    distance = ((x) ** 2 + (y) ** 2) / (2 * sigma ** 2)
     return np.exp(-distance)
 
 

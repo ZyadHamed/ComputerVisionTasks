@@ -61,7 +61,7 @@ def NormalizeImage(img: np.array):
   max_val = img.max()
   min_val = img.min()
   if max_val == min_val:
-    return np.zeros_like(img, dtype=np.uint8)
+    return img #Return same image as no normalization needs to take place. It's unicolor. 
   normalized_image = 255 * ((img - min_val) / (max_val - min_val))
   return normalized_image.astype("uint8")
 
