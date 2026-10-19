@@ -1,8 +1,4 @@
-# Computer Vision – Task 1: Image Noise, Filtering, Edge Detection and Histograms
-
-**Course:** Computer Vision – SBEG455-24
-**Team 1**
-
+# Image Noise, Filtering, Edge Detection and Histograms
 This project is an image-processing toolkit implemented largely from scratch with NumPy. It covers noise generation, spatial and frequency-domain filtering, hybrid images, manual 2D convolution, edge detection, intensity normalization, grayscale conversion, and histogram analysis and equalization. Results are demonstrated through a web interface; screenshots are in the `Screenshots/` folder.
 
 ---
