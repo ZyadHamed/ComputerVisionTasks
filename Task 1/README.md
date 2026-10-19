@@ -358,15 +358,3 @@ This is why the equalized histogram of a discrete image is not perfectly flat: i
 ![Equalized histogram graph](Screenshots/EqualizedHistogramGraph.png)
 
 After equalization, more detail is visible in dark and bright regions and the histogram spreads over the full range.
-
-### Limitations
-- **Channel-wise RGB equalization:** equalizing each channel independently changes the R:G:B proportions and can cause colour shifts. Equalizing only luminance would preserve hue better.
-- **Global operation:** one mapping is applied to the whole image, so local contrast is not adapted and noisy areas may be amplified.
-- **Simple CDF scaling:** the mapping uses `C(r_k)` directly rather than subtracting the minimum non-zero CDF value, so the darkest level may not map exactly to 0 when the image has no true black.
-
----
-
-## Repository Notes
-
-- Screenshots referenced above live in `Screenshots/`.
-- Filtering, convolution, edge detection, normalization, grayscale conversion and histogram operations are implemented from scratch with NumPy; only Canny (`cv2.Canny`) and the `correlate2d` verification path rely on libraries.
