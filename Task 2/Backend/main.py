@@ -9,12 +9,6 @@ from Backend.Services.UtilitiesService import (
     NormalizeImage
 )
 
-from Backend.Services.NoiseService import add_noise
-
-from Backend.Services.FiltersService import low_pass_filter
-
-from Backend.Services.HistogramService import Histogram
-
 app = FastAPI()
 
 
