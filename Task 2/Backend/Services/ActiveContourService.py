@@ -16,19 +16,6 @@ logger = logging.getLogger(__name__)
 # Layer 1: Edge map
 # ----------------------------------------------------------------------------
 
-def gaussian_blur(img: np.ndarray, kernel_size=3, sigma=1.0, manual: bool = False):
-    half = kernel_size // 2
-    offsets = np.arange(-half, half + 1)  # position of each column relative to the center
-    x, y = np.meshgrid(offsets, offsets)
-
-    kernel = np.exp(-(x ** 2 + y ** 2) / (2 * sigma ** 2))
-
-    # normalize so the weights sum to 1, otherwise the image gets brighter
-    gaussian_kernel = kernel / kernel.sum()
-
-    return np.round(ConvolveImage(img, gaussian_kernel, manual=manual)).astype(np.uint8)
-
-
 SOBEL_X = np.array([[-1, 0, 1],
                     [-2, 0, 2],
                     [-1, 0, 1]], dtype=np.float64)
@@ -42,7 +29,12 @@ def compute_edge_map(img: np.ndarray, kernel_size=5, sigma=2.0, manual=False):
     else:
         gray = img.copy()
 
-    blurred = gaussian_blur(gray, kernel_size, sigma, manual).astype(np.float64)
+    blurred = gaussian_filter(
+    gray.astype(np.float64),
+    sigma=sigma,
+    truncate=(kernel_size // 2) / sigma,
+    mode="constant",
+    )
 
     # 2) Sobel: horizontal and vertical brightness change
     gx = ConvolveImage(blurred, SOBEL_X, manual=manual)
