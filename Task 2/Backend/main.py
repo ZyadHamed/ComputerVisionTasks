@@ -18,6 +18,10 @@ from Backend.Services.ActiveContourService import (
     draw_contours,
 )
 
+from Backend.Services.ChainCodeService import contour_to_chain_code
+
+
+
 app = FastAPI()
 
 # Allow the frontend (opened from a file or another port) to call the API.
@@ -169,3 +173,53 @@ async def active_contour_overlay(file: UploadFile = File(...), params: dict = De
     """Run the snake and return the image with initial (blue) and final (red) contours drawn on it (PNG)."""
     image, initial, final = await run_active_contour(file, params)
     return process_image(draw_contours(image, initial, final))
+
+# ----------------------------------------------------------------------------
+# Freeman 8-direction Chain Code
+# ----------------------------------------------------------------------------
+
+@app.post("/chain-code")
+async def generate_chain_code(
+    contour: str = Form(
+        ...,
+        description="Contour points in JSON format: [[x, y], [x, y], ...]"
+    )
+):
+    """
+    Convert contour points into an 8-direction Freeman chain code.
+
+    Returns:
+        start_pixel: Starting pixel of the contour.
+        chain_code: List of Freeman direction codes.
+    """
+
+    try:
+        points = json.loads(contour)
+
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=400,
+            detail="'contour' must be valid JSON: [[x, y], ...]"
+        )
+
+    # Validate contour format
+    if not isinstance(points, list) or len(points) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Contour must contain at least two points."
+        )
+
+    try:
+        start_pixel, chain_code = contour_to_chain_code(points)
+
+    except (ValueError, IndexError, TypeError) as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+    return {
+        "start_pixel": list(start_pixel),
+        "chain_code": chain_code,
+        "chain_code_length": len(chain_code)
+    }
