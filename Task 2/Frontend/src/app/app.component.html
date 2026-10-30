@@ -1,0 +1,277 @@
+<div class="shell">
+
+  <!-- ===================== SIDEBAR ===================== -->
+  <aside class="sidebar">
+
+    <!-- Logo / Header -->
+    <div class="sidebar-header">
+      <h1 class="sidebar-title">Active Contour</h1>
+    </div>
+
+    <!-- Upload -->
+    <div class="sb-section">
+      <div class="sb-section-title">Image</div>
+      <label class="upload-btn" [class.has-file]="!!file" id="upload-label">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        {{ file ? file.name : 'Upload Image…' }}
+        <input id="file-input" type="file" accept="image/*" (change)="onFile($event)" style="display:none">
+      </label>
+    </div>
+
+    <!-- Shape type -->
+    <div class="sb-section">
+      <div class="sb-section-title">Contour Shape</div>
+      <div class="shape-tabs">
+        <button class="shape-tab" [class.active]="shapeType==='rectangle'" (click)="setShape('rectangle')" id="tab-rectangle" title="Rectangle">
+          <svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="1"/></svg>
+          Rect
+        </button>
+        <button class="shape-tab" [class.active]="shapeType==='square'" (click)="setShape('square')" id="tab-square" title="Square">
+          <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1"/></svg>
+          Square
+        </button>
+        <button class="shape-tab" [class.active]="shapeType==='circle'" (click)="setShape('circle')" id="tab-circle" title="Circle">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>
+          Circle
+        </button>
+      </div>
+
+      <!-- Manual shape parameters -->
+      @if (shapeType === 'circle') {
+        <div class="field-row">
+          <div class="field">
+            <label>Center X (px)</label>
+            <input id="center-x" type="number" [(ngModel)]="shapeCx" (ngModelChange)="applyManualShape()" min="0">
+          </div>
+          <div class="field">
+            <label>Center Y (px)</label>
+            <input id="center-y" type="number" [(ngModel)]="shapeCy" (ngModelChange)="applyManualShape()" min="0">
+          </div>
+        </div>
+        <div class="field">
+          <label>Radius (px)</label>
+          <input id="radius" type="number" [(ngModel)]="shapeRadius" (ngModelChange)="applyManualShape()" min="1">
+        </div>
+      }
+
+      @if (shapeType === 'rectangle') {
+        <div class="field-row">
+          <div class="field">
+            <label>Left X (px)</label>
+            <input id="rect-x" type="number" [(ngModel)]="shapeX" (ngModelChange)="applyManualShape()" min="0">
+          </div>
+          <div class="field">
+            <label>Top Y (px)</label>
+            <input id="rect-y" type="number" [(ngModel)]="shapeY" (ngModelChange)="applyManualShape()" min="0">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Width (px)</label>
+            <input id="rect-w" type="number" [(ngModel)]="shapeW" (ngModelChange)="applyManualShape()" min="1">
+          </div>
+          <div class="field">
+            <label>Height (px)</label>
+            <input id="rect-h" type="number" [(ngModel)]="shapeH" (ngModelChange)="applyManualShape()" min="1">
+          </div>
+        </div>
+      }
+
+      @if (shapeType === 'square') {
+        <div class="field-row">
+          <div class="field">
+            <label>Left X (px)</label>
+            <input id="sq-x" type="number" [(ngModel)]="shapeX" (ngModelChange)="applyManualShape()" min="0">
+          </div>
+          <div class="field">
+            <label>Top Y (px)</label>
+            <input id="sq-y" type="number" [(ngModel)]="shapeY" (ngModelChange)="applyManualShape()" min="0">
+          </div>
+        </div>
+        <div class="field">
+          <label>Side Length (px)</label>
+          <input id="sq-side" type="number" [(ngModel)]="shapeW" (ngModelChange)="shapeH = shapeW; applyManualShape()" min="1">
+        </div>
+      }
+
+      <p class="hint-text">
+        Drag on the canvas to draw, or fill in the fields above.
+      </p>
+    </div>
+
+    <!-- Snake Parameters -->
+    <div class="sb-section">
+      <div class="sb-section-title">Snake Parameters</div>
+
+      <div class="field">
+        <label>Alpha — Elasticity</label>
+        <div class="slider-row">
+          <input id="alpha-slider" type="range" min="0" max="10" step="0.1" [(ngModel)]="alpha">
+          <span class="slider-val">{{ alpha }}</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Beta — Stiffness</label>
+        <div class="slider-row">
+          <input id="beta-slider" type="range" min="0" max="10" step="0.1" [(ngModel)]="beta">
+          <span class="slider-val">{{ beta }}</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Gamma — Step Size</label>
+        <div class="slider-row">
+          <input id="gamma-slider" type="range" min="0" max="20" step="0.1" [(ngModel)]="gamma">
+          <span class="slider-val">{{ gamma }}</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Max Iterations</label>
+        <input id="max-iter" type="number" [(ngModel)]="maxIterations" min="1" max="5000">
+      </div>
+
+      <div class="field">
+        <label>Scales (comma-separated)</label>
+        <input id="scales" type="text" [(ngModel)]="scales" placeholder="e.g. 12,6,3">
+      </div>
+
+      <div class="field">
+        <label>Contour Sample Points</label>
+        <div class="slider-row">
+          <input id="num-points-slider" type="range" min="10" max="300" step="5" [(ngModel)]="numPoints">
+          <span class="slider-val">{{ numPoints }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sb-spacer"></div>
+
+    <!-- Actions -->
+    <div class="sb-section">
+      <button id="run-btn" class="btn btn-primary" [disabled]="running || !hasShape" (click)="run()">
+        @if (running) {
+          <span class="spin"></span> Running…
+        } @else {
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Run Snake
+        }
+      </button>
+
+      <div class="status-wrap">
+        @if (running) {
+          <span class="status-badge running">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            {{ formatTime(elapsedMs) }}
+          </span>
+        } @else if (statusError) {
+          <span class="status-badge error">⚠ {{ statusError }}</span>
+        } @else if (resultUrl) {
+          <span class="status-badge success">
+            ✓ Done &nbsp;·&nbsp; {{ formatTime(elapsedFinal) }}
+          </span>
+        }
+      </div>
+
+      <div class="btn-row" style="margin-top:8px">
+        <button id="reset-btn" class="btn btn-danger" (click)="reset()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/></svg>
+          Reset
+        </button>
+        <button id="download-btn" class="btn btn-secondary" [disabled]="!resultUrl" (click)="download()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Save
+        </button>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ===================== MAIN ===================== -->
+  <main class="main">
+
+    <!-- Top bar -->
+    <div class="topbar">
+      <span class="topbar-title">Canvas</span>
+      <div class="topbar-sep"></div>
+      <span class="topbar-hint">
+        @if (!file) { Upload an image to begin }
+        @else if (!hasShape) { Drag on the canvas to draw a {{ shapeType }} contour }
+        @else { Contour ready — click Run Snake }
+      </span>
+      <span class="topbar-tag">{{ shapeType | titlecase }}</span>
+    </div>
+
+    <!-- Two panels: input canvas + result -->
+    <div class="content-area">
+
+      <!-- Input / Draw panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-label">
+            <span class="panel-dot" [class.active]="!!file"></span>
+            INPUT
+          </div>
+          <div class="panel-actions">
+            @if (imgW && imgH) {
+              <span style="font-size:11px;color:var(--text-muted)">{{ imgW }} × {{ imgH }} px</span>
+            }
+          </div>
+        </div>
+
+        <div class="canvas-wrap" #canvasWrap>
+          @if (!file) {
+            <div class="canvas-empty">
+              <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <p>Upload an image to get started</p>
+            </div>
+          }
+          <canvas #canvas
+            [class.draw-mode-rect]="shapeType==='rectangle'"
+            [class.draw-mode-square]="shapeType==='square'"
+            [class.draw-mode-circle]="shapeType==='circle'"
+            (mousedown)="onMouseDown($event)"
+            (mousemove)="onMouseMove($event)"
+            (mouseup)="onMouseUp($event)"
+            (mouseleave)="onMouseLeave($event)"
+            [style.display]="file ? 'block' : 'none'">
+          </canvas>
+        </div>
+      </div>
+
+      <!-- Result panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-label">
+            <span class="panel-dot" [class.active]="!!resultUrl"></span>
+            RESULT
+          </div>
+          <div class="panel-actions">
+            @if (resultUrl) {
+              <button class="icon-btn" (click)="download()" id="result-download-btn">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download
+              </button>
+            }
+          </div>
+        </div>
+
+        <div class="result-img-wrap">
+          @if (resultUrl) {
+            <img [src]="resultUrl" alt="Snake contour result" id="result-image">
+          } @else {
+            <div class="result-empty">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.3"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/></svg>
+              <p>Empty — run the snake to see the result here</p>
+            </div>
+          }
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+</div>
