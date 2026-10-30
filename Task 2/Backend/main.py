@@ -1,5 +1,6 @@
 import json
 from io import BytesIO
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -18,6 +19,9 @@ from Backend.Services.ActiveContourService import (
     prepare_contour,
     segment_active_contour,
     draw_contours,
+)
+from Backend.Services.CannyEdgeDetectionService import (
+    canny_edge_detection,
 )
 
 from Backend.Services.ChainCodeService import (
@@ -98,6 +102,40 @@ async def read_uploaded_image(file: UploadFile, convert_to_grayscale = True) -> 
         image = TransformIntoGrayScale(image, mode="weighted")
 
     return image
+
+
+# ----------------------------------------------------------------------------
+# Canny edge detection
+# ----------------------------------------------------------------------------
+
+@app.post("/canny")
+async def canny(
+    file: UploadFile = File(...),
+    sigma: float = Form(1.4, gt=0, description="Gaussian blur strength"),
+    low_threshold: float = Form(20, ge=0, le=255, description="Low hysteresis threshold (0-255 gradient scale)"),
+    high_threshold: float = Form(50, ge=0, le=255, description="High hysteresis threshold (0-255 gradient scale)"),
+    kernel_size: Optional[int] = Form(None, ge=3, le=51, description="Gaussian kernel size (odd). Derived from sigma if omitted"),
+    propagate: bool = Form(True, description="Grow weak edges along connected chains (classic Canny)"),
+    manual: bool = Form(False, description="Use the manual convolution implementation"),
+):
+    """Run Canny edge detection and return the edge map (PNG)."""
+    image = await read_uploaded_image(file, convert_to_grayscale=True)
+
+    try:
+        edges = await run_in_threadpool(
+            canny_edge_detection,
+            image,
+            sigma=sigma,
+            low_threshold=low_threshold,
+            high_threshold=high_threshold,
+            kernel_size=kernel_size,
+            propagate=propagate,
+            manual=manual,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return process_image(edges)
 
 
 # ----------------------------------------------------------------------------
