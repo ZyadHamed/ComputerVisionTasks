@@ -148,6 +148,24 @@
       </div>
     </div>
 
+    @if (currentFrame) {
+      <div class="sb-section chain-code-section">
+        <div class="sb-section-title">Freeman Chain Code</div>
+        <div class="chain-code-meta">
+          <span>Iteration {{ currentFrame.iteration }}</span>
+          <span>{{ currentFrame.chain_code.length }} steps</span>
+        </div>
+        <div class="chain-code-meta">
+          <span>Scale {{ currentFrame.scale ?? 'initial' }}</span>
+          <span>{{ currentFrame.contour.length }} contour points · {{ currentFrame.moved_points }} moved</span>
+        </div>
+        @if (currentFrame.converged) {
+          <div class="converged-label">Scale converged</div>
+        }
+        <div class="chain-code-display" aria-live="polite">{{ chainCodeText }}</div>
+      </div>
+    }
+
     <div class="sb-spacer"></div>
 
     <!-- Actions -->
@@ -171,7 +189,7 @@
           <span class="status-badge error">⚠ {{ statusError }}</span>
         } @else if (resultUrl) {
           <span class="status-badge success">
-            ✓ Done &nbsp;·&nbsp; {{ formatTime(elapsedFinal) }}
+            ✓ {{ snakeConverged ? 'Converged' : 'Iteration limit reached' }} &nbsp;·&nbsp; {{ formatTime(elapsedFinal) }}
           </span>
         }
       </div>
@@ -200,6 +218,7 @@
       <span class="topbar-hint">
         @if (!file) { Upload an image to begin }
         @else if (!hasShape) { Drag on the canvas to draw a {{ shapeType }} contour }
+        @else if (currentFrame) { Iteration {{ currentFrame.iteration }} · scale {{ currentFrame.scale ?? 'initial' }} }
         @else { Contour ready — click Run Snake }
       </span>
       <span class="topbar-tag">{{ shapeType | titlecase }}</span>
@@ -246,7 +265,7 @@
       <div class="panel">
         <div class="panel-header">
           <div class="panel-label">
-            <span class="panel-dot" [class.active]="!!resultUrl"></span>
+            <span class="panel-dot" [class.active]="!!currentContour"></span>
             RESULT
           </div>
           <div class="panel-actions">
@@ -260,15 +279,32 @@
         </div>
 
         <div class="result-img-wrap">
-          @if (resultUrl) {
+          <canvas
+            #resultCanvas
+            id="result-canvas"
+            [style.display]="currentContour ? 'block' : 'none'">
+          </canvas>
+          @if (!currentContour && resultUrl) {
             <img [src]="resultUrl" alt="Snake contour result" id="result-image">
-          } @else {
+          } @else if (!currentContour && !resultUrl) {
             <div class="result-empty">
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.3"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/></svg>
               <p>Empty — run the snake to see the result here</p>
             </div>
           }
         </div>
+        @if (finalArea !== null && finalPerimeter !== null) {
+          <div class="measurement-strip" aria-label="Final contour measurements">
+            <div class="measurement">
+              <span class="measurement-label">Area</span>
+              <strong>{{ finalArea | number:'1.0-2' }} px²</strong>
+            </div>
+            <div class="measurement">
+              <span class="measurement-label">Perimeter</span>
+              <strong>{{ finalPerimeter | number:'1.0-2' }} px</strong>
+            </div>
+          </div>
+        }
       </div>
 
     </div>

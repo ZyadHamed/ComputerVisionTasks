@@ -1,3 +1,6 @@
+from math import sqrt
+
+
 # ----------------------------------------------------------------------------
 # Freeman 8-direction chain code
 #
@@ -136,3 +139,36 @@ def contour_to_chain_code(contour):
     """Snake points -> (start_pixel, codes), For the API call"""
     path = contour_to_pixel_path(contour)
     return pixel_path_to_chain_code(path)
+
+
+def compute_perimeter(chain_code):
+    """Calculate the contour perimeter in pixels from its Freeman chain code."""
+    if not chain_code:
+        return 0.0
+    if any(code not in range(8) for code in chain_code):
+        raise ValueError("Chain code must contain values from 0 to 7.")
+
+    return sum(sqrt(2) if code % 2 else 1 for code in chain_code)
+
+
+def compute_area(chain_code, start_point=(0, 0)):
+    """Calculate enclosed area in square pixels using the shoelace formula."""
+    if not chain_code:
+        return 0.0
+    if any(code not in DIRECTIONS for code in chain_code):
+        raise ValueError("Chain code must contain values from 0 to 7.")
+
+    x, y = start_point
+    start_x, start_y = x, y
+    area_sum = 0
+
+    for code in chain_code:
+        dx, dy = DIRECTIONS[code]
+        next_x, next_y = x + dx, y + dy
+        area_sum += x * next_y - next_x * y
+        x, y = next_x, next_y
+
+    if (x, y) != (start_x, start_y):
+        raise ValueError("Chain code does not describe a closed contour.")
+
+    return abs(area_sum) / 2

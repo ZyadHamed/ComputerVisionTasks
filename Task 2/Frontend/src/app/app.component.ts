@@ -1,7 +1,7 @@
-import { Component, ElementRef, ViewChild, AfterViewInit, OnDestroy, Pipe, PipeTransform } from '@angular/core';
+import { Component, ElementRef, ViewChild, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { TitleCasePipe } from '@angular/common';
-import { SnakeService } from './snake.service';
+import { DecimalPipe, TitleCasePipe } from '@angular/common';
+import { SnakeFrame, SnakeService } from './snake.service';
 
 // ── A tiny TitleCase pipe (Angular's is in CommonModule) ──────────────────────
 // We import TitleCasePipe from @angular/common directly.
@@ -24,12 +24,13 @@ interface DrawnShape {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [FormsModule, TitleCasePipe],
+  imports: [FormsModule, DecimalPipe, TitleCasePipe],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css',
 })
 export class AppComponent implements OnDestroy {
   @ViewChild('canvas') canvasRef!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('resultCanvas') resultCanvasRef!: ElementRef<HTMLCanvasElement>;
 
   // ── API (hardcoded, no longer shown in UI) ──────────────────────────────────
   readonly apiUrl = 'http://localhost:8000';
@@ -46,6 +47,13 @@ export class AppComponent implements OnDestroy {
   statusError  = '';
   running      = false;
   resultUrl    = '';
+  currentFrame: SnakeFrame | null = null;
+  currentContour: number[][] | null = null;
+  initialContour: number[][] | null = null;
+  snakeConverged: boolean | null = null;
+  finalArea: number | null = null;
+  finalPerimeter: number | null = null;
+  readonly chainCodeDirections = ['→', '↗', '↑', '↖', '←', '↙', '↓', '↘'];
 
   // ── Timer ─────────────────────────────────────────────────────────────────────
   elapsedMs    = 0;   // live counter while running
@@ -115,6 +123,7 @@ export class AppComponent implements OnDestroy {
   setShape(type: ShapeType) {
     this.shapeType = type;
     this.shape = null;
+    this.clearAnimation();
     this.redraw();
   }
 
@@ -134,6 +143,8 @@ export class AppComponent implements OnDestroy {
       this.imgW = img.naturalWidth;
       this.imgH = img.naturalHeight;
       this.shape = null;
+      this.clearAnimation();
+      if (this.resultUrl) URL.revokeObjectURL(this.resultUrl);
       this.resultUrl = '';
       this.statusError = '';
       this.redraw();
@@ -144,6 +155,7 @@ export class AppComponent implements OnDestroy {
   // ── Manual shape application (from sidebar fields) ───────────────────────────
   applyManualShape() {
     if (!this.img) return;
+    this.clearAnimation();
     if (this.shapeType === 'circle') {
       this.shape = { type: 'circle', cx: this.shapeCx, cy: this.shapeCy, r: this.shapeRadius, x: 0, y: 0, w: 0, h: 0 };
     } else {
@@ -162,6 +174,7 @@ export class AppComponent implements OnDestroy {
   // ── Canvas mouse events (drag-to-draw) ───────────────────────────────────────
   onMouseDown(e: MouseEvent) {
     if (!this.img) return;
+    this.clearAnimation();
     const [ix, iy] = this.toImageCoords(e);
     this.dragging  = true;
     this.dragStart = { x: ix, y: iy };
@@ -312,53 +325,120 @@ export class AppComponent implements OnDestroy {
     ctx.restore();
   }
 
+  private redrawResult() {
+    if (!this.img || !this.currentContour) return;
+    const canvas = this.resultCanvasRef.nativeElement;
+    if (canvas.width !== this.imgW || canvas.height !== this.imgH) {
+      canvas.width = this.imgW;
+      canvas.height = this.imgH;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not access the output canvas.');
+    ctx.drawImage(this.img, 0, 0);
+    if (this.initialContour) {
+      this.drawContour(ctx, this.initialContour, '#4f6ef7', 1);
+    }
+    this.drawContour(ctx, this.currentContour, '#ff3b5c', 2, true);
+  }
+
+  private drawContour(
+    ctx: CanvasRenderingContext2D,
+    contour: number[][],
+    color: string,
+    lineWidth: number,
+    showPoints = false,
+  ) {
+    if (contour.length < 2) return;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(lineWidth, this.imgW / 500);
+    ctx.beginPath();
+    ctx.moveTo(contour[0][0], contour[0][1]);
+    for (const [x, y] of contour.slice(1)) ctx.lineTo(x, y);
+    ctx.closePath();
+    ctx.stroke();
+    if (showPoints) {
+      ctx.fillStyle = '#ffe066';
+      const radius = Math.max(1.5, this.imgW / 1000);
+      for (const [x, y] of contour) {
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  private clearAnimation() {
+    this.currentFrame = null;
+    this.currentContour = null;
+    this.initialContour = null;
+    this.snakeConverged = null;
+    this.finalArea = null;
+    this.finalPerimeter = null;
+  }
+
+  get chainCodeText(): string {
+    return this.currentFrame?.chain_code
+      .map((code) => `${code}${this.chainCodeDirections[code] ?? '?'}`)
+      .join(' ') ?? '';
+  }
+
   // ── Run ───────────────────────────────────────────────────────────────────────
-  run() {
+  async run() {
     if (!this.file)  { this.statusError = 'Upload an image first.'; return; }
     if (!this.shape) { this.statusError = 'Draw a contour on the canvas first.'; return; }
 
     this.running     = true;
     this.statusError = '';
     this.elapsedFinal = 0;
+    this.clearAnimation();
+    if (this.resultUrl) URL.revokeObjectURL(this.resultUrl);
+    this.resultUrl = '';
     this.startTimer();
 
     const contour = this.shapeToContour(this.shape, this.numPoints);
-
-    this.snake
-      .runOverlay(this.apiUrl, this.file, contour, {
+    try {
+      const measurements = await this.snake.runIterations(this.apiUrl, this.file, contour, {
         alpha: this.alpha,
         beta:  this.beta,
         gamma: this.gamma,
         scales: this.scales,
         maxIterations: this.maxIterations,
         numPoints: this.numPoints,
-      })
-      .subscribe({
-        next: (blob) => {
-          this.stopTimer();
-          if (this.resultUrl) URL.revokeObjectURL(this.resultUrl);
-          this.resultUrl = URL.createObjectURL(blob);
-          this.running   = false;
-        },
-        error: async (err) => {
-          let message = 'Request failed — is the backend running?';
-          if (err.error instanceof Blob) {
-            try {
-              const body = JSON.parse(await err.error.text());
-              message = JSON.stringify(body.detail ?? body);
-            } catch { /* keep default */ }
-          }
-          this.stopTimer();
-          this.statusError = message;
-          this.running     = false;
-        },
+      }, async (frame) => {
+        this.currentFrame = frame;
+        this.currentContour = frame.contour;
+        if (frame.iteration === 0) this.initialContour = frame.contour;
+        this.redrawResult();
+        await new Promise((resolve) => setTimeout(resolve, 45));
       });
+      this.snakeConverged = measurements.converged;
+      this.finalArea = measurements.area;
+      this.finalPerimeter = measurements.perimeter;
+      this.redrawResult();
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        this.resultCanvasRef.nativeElement.toBlob((result) => {
+          if (result) resolve(result);
+          else reject(new Error('Could not create the final contour image.'));
+        }, 'image/png');
+      });
+      this.resultUrl = URL.createObjectURL(blob);
+    } catch (error) {
+      this.statusError = error instanceof Error
+        ? error.message
+        : 'Request failed — is the backend running?';
+    } finally {
+      this.stopTimer();
+      this.running = false;
+    }
   }
 
   // ── Reset ─────────────────────────────────────────────────────────────────────
   reset() {
     this.shape       = null;
     this.statusError = '';
+    this.clearAnimation();
     if (this.resultUrl) { URL.revokeObjectURL(this.resultUrl); this.resultUrl = ''; }
     this.redraw();
   }

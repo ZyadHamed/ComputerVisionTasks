@@ -277,10 +277,10 @@ def detect_corners(contour, edge_map, angle_threshold=45, edge_threshold=0.5):
     return np.array(corners, dtype=bool)
 
 
-def run_snake(contour, image, alpha=1.0, beta=1.0, gamma=1.0,
-              attraction_sigma=3.0, max_iterations=300,
-              convergence_threshold=0.02, radius=2,
-              use_corners=False, edge_map=None, verbose=False):
+def iter_snake(contour, image, alpha=1.0, beta=1.0, gamma=1.0,
+               attraction_sigma=3.0, max_iterations=300,
+               convergence_threshold=0.02, radius=2,
+               use_corners=False, edge_map=None, verbose=False):
     """
     convergence_threshold: fraction of points allowed to move in an iteration
                            before the snake is considered converged.
@@ -318,16 +318,34 @@ def run_snake(contour, image, alpha=1.0, beta=1.0, gamma=1.0,
                 contour[i] = new_point
                 moved_points += 1
 
-        if moved_points <= convergence_threshold * len(contour):
+        converged = moved_points <= convergence_threshold * len(contour)
+        if converged:
             if verbose:
                 logger.info("converged at iteration %d", iteration + 1)
+        yield contour.copy(), iteration + 1, moved_points, converged
+        if converged:
             break
     else:
         if verbose:
             logger.info("stopped after %d iterations (%d points still moving)",
                         max_iterations, moved_points)
 
-    return contour
+
+def run_snake(contour, image, alpha=1.0, beta=1.0, gamma=1.0,
+              attraction_sigma=3.0, max_iterations=300,
+              convergence_threshold=0.02, radius=2,
+              use_corners=False, edge_map=None, verbose=False):
+    """Run the snake to convergence and return its final contour."""
+    final_contour = np.asarray(contour, dtype=int).copy()
+    for final_contour, _, _, _ in iter_snake(
+        final_contour, image, alpha=alpha, beta=beta, gamma=gamma,
+        attraction_sigma=attraction_sigma, max_iterations=max_iterations,
+        convergence_threshold=convergence_threshold, radius=radius,
+        use_corners=use_corners, edge_map=edge_map, verbose=verbose,
+    ):
+        pass
+
+    return final_contour
 
 
 def run_snake_multiscale(contour, image, scales=(12, 6, 3), **kwargs):

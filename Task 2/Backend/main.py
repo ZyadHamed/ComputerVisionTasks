@@ -14,11 +14,17 @@ from Backend.Services.UtilitiesService import (
 )
 from Backend.Services.ActiveContourService import (
     compute_edge_map,
+    iter_snake,
+    prepare_contour,
     segment_active_contour,
     draw_contours,
 )
 
-from Backend.Services.ChainCodeService import contour_to_chain_code
+from Backend.Services.ChainCodeService import (
+    compute_area,
+    compute_perimeter,
+    contour_to_chain_code,
+)
 
 
 
@@ -166,6 +172,110 @@ async def active_contour(file: UploadFile = File(...), params: dict = Depends(sn
         "initial_contour": initial.tolist(),
         "final_contour": final.tolist(),
     }
+
+
+@app.post("/active-contour/iterations")
+async def active_contour_iterations(
+    file: UploadFile = File(...),
+    params: dict = Depends(snake_params),
+):
+    """Stream each snake contour and its Freeman chain code as NDJSON."""
+    image = await read_uploaded_image(file, convert_to_grayscale=False)
+    try:
+        initial = await run_in_threadpool(
+            prepare_contour, params["points"], image.shape, params["num_points"]
+        )
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    edge_map = await run_in_threadpool(compute_edge_map, image)
+
+    def frames():
+        contour = initial.copy()
+        iteration = 0
+
+        try:
+            start_pixel, chain_code = contour_to_chain_code(contour)
+        except (ValueError, IndexError, TypeError) as e:
+            yield json.dumps({"type": "error", "detail": str(e)}) + "\n"
+            return
+
+        yield json.dumps({
+            "type": "frame",
+            "iteration": 0,
+            "stage": 0,
+            "stage_iteration": 0,
+            "scale": None,
+            "contour": contour.tolist(),
+            "start_pixel": list(start_pixel),
+            "chain_code": chain_code,
+            "moved_points": 0,
+            "converged": False,
+        }) + "\n"
+
+        snake_options = {
+            "alpha": params["alpha"],
+            "beta": params["beta"],
+            "gamma": params["gamma"],
+            "max_iterations": params["max_iterations"],
+            "radius": params["radius"],
+            "convergence_threshold": params["convergence_threshold"],
+            "use_corners": params["use_corners"],
+            "edge_map": edge_map,
+        }
+        all_scales_converged = True
+
+        for stage, scale in enumerate(params["scales"], start=1):
+            stage_converged = False
+            try:
+                for contour, stage_iteration, moved_points, converged in iter_snake(
+                    contour,
+                    image,
+                    attraction_sigma=scale,
+                    **snake_options,
+                ):
+                    iteration += 1
+                    stage_converged = converged
+                    start_pixel, chain_code = contour_to_chain_code(contour)
+                    yield json.dumps({
+                        "type": "frame",
+                        "iteration": iteration,
+                        "stage": stage,
+                        "stage_iteration": stage_iteration,
+                        "scale": scale,
+                        "contour": contour.tolist(),
+                        "start_pixel": list(start_pixel),
+                        "chain_code": chain_code,
+                        "moved_points": moved_points,
+                        "converged": converged,
+                    }) + "\n"
+            except (ValueError, IndexError, TypeError) as e:
+                yield json.dumps({"type": "error", "detail": str(e)}) + "\n"
+                return
+            all_scales_converged = all_scales_converged and stage_converged
+
+        try:
+            start_pixel, final_chain_code = contour_to_chain_code(contour)
+            final_area = compute_area(final_chain_code, start_pixel)
+            final_perimeter = compute_perimeter(final_chain_code)
+        except (ValueError, IndexError, TypeError) as e:
+            yield json.dumps({"type": "error", "detail": str(e)}) + "\n"
+            return
+
+        yield json.dumps({
+            "type": "done",
+            "iteration": iteration,
+            "final_contour": contour.tolist(),
+            "converged": all_scales_converged,
+            "area": final_area,
+            "perimeter": final_perimeter,
+        }) + "\n"
+
+    return StreamingResponse(
+        frames(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/active-contour/overlay")
