@@ -34,9 +34,10 @@ export class SnakeService {
   constructor(private http: HttpClient) {}
 
   // Sends the image + contour to the backend, returns the result PNG.
-  runOverlay(apiUrl: string, file: File, contour: number[][], p: SnakeParams): Observable<Blob> {
+  runOverlay(apiUrl: string, file: Blob, contour: number[][], p: SnakeParams): Observable<Blob> {
     const form = new FormData();
-    form.append('file', file);
+    form.append('file', file, 'workspace-source.png');
+    form.append('save_as_latest', 'false');
     form.append('contour', JSON.stringify(contour));
     form.append('alpha', String(p.alpha));
     form.append('beta', String(p.beta));
@@ -51,13 +52,14 @@ export class SnakeService {
 
   async runIterations(
     apiUrl: string,
-    file: File,
+    file: Blob,
     contour: number[][],
     params: SnakeParams,
     onFrame: (frame: SnakeFrame) => Promise<void>,
   ): Promise<SnakeMeasurements> {
     const form = new FormData();
-    form.append('file', file);
+    form.append('file', file, 'workspace-source.png');
+    form.append('save_as_latest', 'false');
     form.append('contour', JSON.stringify(contour));
     form.append('alpha', String(params.alpha));
     form.append('beta', String(params.beta));

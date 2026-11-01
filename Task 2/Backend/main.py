@@ -23,6 +23,24 @@ from Backend.Services.ActiveContourService import (
 from Backend.Services.CannyEdgeDetectionService import (
     canny_edge_detection,
 )
+from Backend.Services.LatestImageService import (
+    save_latest_image,
+    load_latest_image,
+    load_latest_image_bytes,
+)
+from Backend.Services.HoughLineTransformService import (
+    DetectLines,
+    DrawLines,
+)
+from Backend.Services.HoughCircleTransformService import (
+    DetectCircles,
+    DrawCircles,
+)
+from Backend.Services.HoughEllipseTransformService import (
+    DetectEllipses,
+    DrawEllipses,
+    NUMBA_AVAILABLE,
+)
 
 from Backend.Services.ChainCodeService import (
     compute_area,
@@ -73,35 +91,139 @@ def process_image(image: np.ndarray) -> StreamingResponse:
         media_type="image/png"
     )
 
-async def read_uploaded_image(file: UploadFile, convert_to_grayscale = True) -> np.ndarray:
-    """Read an uploaded image and convert it to a NumPy array."""
-    contents = await file.read()
-    image_array = np.frombuffer(contents, dtype=np.uint8)
+# Keep upload sizes manageable. Adjust these for your project's expected images.
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+MAX_IMAGE_PIXELS = 16_000_000
 
-    image = cv2.imdecode(image_array, cv2.IMREAD_UNCHANGED)
 
-    if image is None:
+async def read_uploaded_image(
+    file: Optional[UploadFile] = None,
+    convert_to_grayscale: bool = True,
+    save_as_latest: bool = True,
+) -> np.ndarray:
+    """Read an uploaded image, or reuse the most recently saved image.
+
+    A new upload is validated and saved as a lossless PNG before processing.
+    Requests without a file load the saved PNG (which survives API restarts).
+    """
+    if file is None:
+        try:
+            image = await run_in_threadpool(load_latest_image)
+        except FileNotFoundError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "No image has been uploaded yet. Upload one using "
+                    "POST /images/upload or include 'file' in an image request."
+                ),
+            ) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Could not load the stored image: {exc}",
+            ) from exc
+    else:
+        # Read one byte beyond the limit to reject oversized uploads.
+        contents = await file.read(MAX_UPLOAD_BYTES + 1)
+        if len(contents) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="Uploaded image exceeds the 25 MiB limit.",
+            )
+        if not contents:
+            raise HTTPException(status_code=400, detail="Uploaded image is empty.")
+
+        try:
+            image = cv2.imdecode(
+                np.frombuffer(contents, dtype=np.uint8),
+                cv2.IMREAD_UNCHANGED,
+            )
+        except cv2.error:
+            image = None
+
+        if image is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid or unsupported image file.",
+            )
+
+    if image.ndim not in (2, 3) or (
+        image.ndim == 3 and image.shape[2] not in (3, 4)
+    ):
         raise HTTPException(
             status_code=400,
-            detail="Invalid or unsupported image file."
+            detail="Unsupported image channel count.",
         )
 
-    # Convert color images from OpenCV's BGR format to RGB.
+    if image.shape[0] * image.shape[1] > MAX_IMAGE_PIXELS:
+        raise HTTPException(
+            status_code=413,
+            detail="Image exceeds the 16-megapixel limit.",
+        )
+
+    # Only a newly supplied image changes the saved file. The original
+    # OpenCV BGR/BGRA pixel data is stored before any color conversion.
+    if file is not None and save_as_latest:
+        try:
+            await run_in_threadpool(save_latest_image, image)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except (OSError, cv2.error) as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Could not save the uploaded image: {exc}",
+            ) from exc
+
+    # Keep the previous API's RGB convention for downstream services.
     if image.ndim == 3:
         if image.shape[2] == 3:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         elif image.shape[2] == 4:
             image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGBA)
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Unsupported image channel count."
-            )
 
-    if convert_to_grayscale:
+    if convert_to_grayscale and image.ndim == 3:
         image = TransformIntoGrayScale(image, mode="weighted")
 
     return image
+
+
+# ----------------------------------------------------------------------------
+# Latest uploaded image
+# ----------------------------------------------------------------------------
+
+@app.post("/images/upload")
+async def upload_image(file: UploadFile = File(...)):
+    """Replace the single saved image; return its dimensions."""
+    image = await read_uploaded_image(file, convert_to_grayscale=False)
+    return {
+        "message": "Latest image saved successfully.",
+        "width": int(image.shape[1]),
+        "height": int(image.shape[0]),
+        "channels": int(image.shape[2]) if image.ndim == 3 else 1,
+    }
+
+
+@app.get("/images/latest")
+def get_latest_image():
+    """Return the saved image as PNG (no browser cache)."""
+    try:
+        image_data = load_latest_image_bytes()
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="No image has been uploaded yet.",
+        ) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not load the stored image: {exc}",
+        ) from exc
+
+    return Response(
+        content=image_data,
+        media_type="image/png",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 # ----------------------------------------------------------------------------
@@ -110,16 +232,17 @@ async def read_uploaded_image(file: UploadFile, convert_to_grayscale = True) -> 
 
 @app.post("/canny")
 async def canny(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
     sigma: float = Form(1.4, gt=0, description="Gaussian blur strength"),
     low_threshold: float = Form(20, ge=0, le=255, description="Low hysteresis threshold (0-255 gradient scale)"),
     high_threshold: float = Form(50, ge=0, le=255, description="High hysteresis threshold (0-255 gradient scale)"),
     kernel_size: Optional[int] = Form(None, ge=3, le=51, description="Gaussian kernel size (odd). Derived from sigma if omitted"),
     propagate: bool = Form(True, description="Grow weak edges along connected chains (classic Canny)"),
     manual: bool = Form(False, description="Use the manual convolution implementation"),
+    save_as_latest: bool = Form(True, description="Replace stored image when a file is supplied"),
 ):
     """Run Canny edge detection and return the edge map (PNG)."""
-    image = await read_uploaded_image(file, convert_to_grayscale=True)
+    image = await read_uploaded_image(file, convert_to_grayscale=True, save_as_latest=save_as_latest)
 
     try:
         edges = await run_in_threadpool(
@@ -136,6 +259,297 @@ async def canny(
         raise HTTPException(status_code=400, detail=str(e))
 
     return process_image(edges)
+
+
+# ----------------------------------------------------------------------------
+# Hough transforms: shared preprocessing
+# ----------------------------------------------------------------------------
+
+def hough_edge_params(
+    apply_canny: bool = Form(True, description="Apply Canny first (false for an existing edge map)"),
+    sigma: float = Form(1.4, gt=0, description="Canny Gaussian blur strength"),
+    low_threshold: float = Form(20, ge=0, le=255),
+    high_threshold: float = Form(50, ge=0, le=255),
+    save_as_latest: bool = Form(True, description="Replace stored image when a file is supplied"),
+) -> dict:
+    if low_threshold > high_threshold:
+        raise HTTPException(status_code=400, detail="low_threshold must not exceed high_threshold.")
+    return dict(
+        apply_canny=apply_canny,
+        sigma=sigma,
+        low_threshold=low_threshold,
+        high_threshold=high_threshold,
+        save_as_latest=save_as_latest,
+    )
+
+
+async def prepare_hough_image(file: UploadFile, params: dict):
+    """Return the original RGB/grayscale image and 2D edge image."""
+    image = await read_uploaded_image(
+        file, convert_to_grayscale=False, save_as_latest=params["save_as_latest"]
+    )
+    gray = TransformIntoGrayScale(image, mode="weighted") if image.ndim == 3 else image
+
+    if not params["apply_canny"]:
+        return image, gray  # Consistent with the notebook: all nonzero pixels vote.
+
+    try:
+        edges = await run_in_threadpool(
+            canny_edge_detection,
+            gray,
+            sigma=params["sigma"],
+            low_threshold=params["low_threshold"],
+            high_threshold=params["high_threshold"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return image, edges
+
+
+# ----------------------------------------------------------------------------
+# Hough line transform
+# ----------------------------------------------------------------------------
+
+def hough_line_params(
+    threshold: int = Form(100, ge=0, description="Minimum votes (strictly greater)"),
+    use_vectorized: bool = Form(True, description="Use fast NumPy implementation"),
+    edge_params: dict = Depends(hough_edge_params),
+) -> dict:
+    return {**edge_params, "threshold": threshold, "use_vectorized": use_vectorized}
+
+
+async def run_hough_lines(file: UploadFile, params: dict):
+    """Return (original image, [rho, theta] array, accumulator)."""
+    image, edges = await prepare_hough_image(file, params)
+    try:
+        lines, accumulator = await run_in_threadpool(
+            DetectLines,
+            edges,
+            threshold=params["threshold"],
+            use_vectorized=params["use_vectorized"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return image, lines, accumulator
+
+
+@app.post("/hough-lines")
+async def hough_lines(file: Optional[UploadFile] = File(None), params: dict = Depends(hough_line_params)):
+    """Return detected lines in JSON (rho, theta radians and theta degrees)."""
+    _, lines, accumulator = await run_hough_lines(file, params)
+    return {
+        "count": len(lines),
+        "lines": [
+            {"rho": float(rho), "theta": float(theta), "theta_degrees": float(np.degrees(theta))}
+            for rho, theta in lines
+        ],
+        "accumulator_shape": list(accumulator.shape),
+    }
+
+
+@app.post("/hough-lines/overlay")
+async def hough_lines_overlay(file: Optional[UploadFile] = File(None), params: dict = Depends(hough_line_params)):
+    """Return the uploaded image with detected lines drawn in red (PNG)."""
+    image, lines, _ = await run_hough_lines(file, params)
+    overlay = await run_in_threadpool(DrawLines, image, lines)
+    return process_image(overlay)
+
+
+# ----------------------------------------------------------------------------
+# Hough circle transform
+# ----------------------------------------------------------------------------
+
+def hough_circle_params(
+    threshold: int = Form(100, ge=0, description="Minimum circle votes (strictly greater)"),
+    min_radius: int = Form(10, ge=1, description="Minimum circle radius in pixels"),
+    max_radius: int = Form(70, ge=1, description="Maximum circle radius in pixels (inclusive)"),
+    radius_step: int = Form(1, ge=1, description="Step size between searched radii"),
+    radii: Optional[str] = Form(None, description="Optional comma-separated radius list; overrides min/max/step"),
+    max_circles: int = Form(2, ge=1, le=100),
+    min_center_distance: int = Form(80, ge=0, description="Suppression distance in center pixels"),
+    radius_distance: int = Form(5, ge=0, description="Suppression distance in radius bin indices"),
+    use_vectorized: bool = Form(True),
+    batch_size: int = Form(1024, ge=1, le=8192),
+    edge_params: dict = Depends(hough_edge_params),
+) -> dict:
+    if radii is not None:
+        try:
+            tokens = [piece.strip() for piece in radii.split(",")]
+            if not tokens or any(not piece for piece in tokens):
+                raise ValueError()
+            selected_radii = np.asarray([float(piece) for piece in tokens], dtype=float)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="radii must be comma-separated numbers, e.g. '20,25,30'.") from exc
+        if (
+            np.any(~np.isfinite(selected_radii))
+            or np.any(selected_radii <= 0)
+            or len(np.unique(selected_radii)) != len(selected_radii)
+        ):
+            raise HTTPException(status_code=400, detail="radii must contain distinct positive finite values.")
+        selected_radii.sort()
+    else:
+        if max_radius < min_radius:
+            raise HTTPException(status_code=400, detail="max_radius must be >= min_radius.")
+        requested_count = 1 + (max_radius - min_radius) // radius_step
+        if requested_count > 256:
+            raise HTTPException(status_code=400, detail="Limit searches to 256 different radius values.")
+        selected_radii = np.arange(min_radius, max_radius + 1, radius_step, dtype=float)
+
+    if len(selected_radii) > 256:
+        raise HTTPException(status_code=400, detail="Limit searches to 256 different radius values.")
+    return {
+        **edge_params,
+        "threshold": threshold,
+        "radii": selected_radii,
+        "max_circles": max_circles,
+        "min_center_distance": min_center_distance,
+        "radius_distance": radius_distance,
+        "use_vectorized": use_vectorized,
+        "batch_size": batch_size,
+    }
+
+
+async def run_hough_circles(file: UploadFile, params: dict):
+    """Return (original image, [radius, y, x] array, accumulator)."""
+    image, edges = await prepare_hough_image(file, params)
+    try:
+        circles, accumulator = await run_in_threadpool(
+            DetectCircles,
+            edges,
+            params["radii"],
+            threshold=params["threshold"],
+            max_circles=params["max_circles"],
+            min_center_distance=params["min_center_distance"],
+            radius_distance=params["radius_distance"],
+            use_vectorized=params["use_vectorized"],
+            batch_size=params["batch_size"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return image, circles, accumulator
+
+
+@app.post("/hough-circles")
+async def hough_circles(file: Optional[UploadFile] = File(None), params: dict = Depends(hough_circle_params)):
+    """Return detected circle centers, radii and vote counts as JSON."""
+    _, circles, accumulator = await run_hough_circles(file, params)
+    items = []
+    for radius, center_y, center_x in circles:
+        r_index = int(np.flatnonzero(params["radii"] == radius)[0])
+        items.append({
+            "radius": float(radius),
+            "center_x": int(center_x),
+            "center_y": int(center_y),
+            "votes": int(accumulator[r_index, int(center_y), int(center_x)]),
+        })
+    return {
+        "count": len(items),
+        "circles": items,
+        "accumulator_shape": list(accumulator.shape),
+    }
+
+
+@app.post("/hough-circles/overlay")
+async def hough_circles_overlay(file: Optional[UploadFile] = File(None), params: dict = Depends(hough_circle_params)):
+    """Return the uploaded image with detected circles drawn in red (PNG)."""
+    image, circles, _ = await run_hough_circles(file, params)
+    overlay = await run_in_threadpool(DrawCircles, image, circles)
+    return process_image(overlay)
+
+
+# ----------------------------------------------------------------------------
+# Hough ellipse transform
+# ----------------------------------------------------------------------------
+
+def hough_ellipse_params(
+    threshold: int = Form(100, ge=0, description="Minimum supporting points (strictly greater)"),
+    pair_tolerance: float = Form(2, ge=0, description="Minimum major-axis endpoint separation"),
+    center_tolerance: float = Form(4, ge=0, description="Minimum distance of third point from center"),
+    max_ellipses: int = Form(2, ge=1, le=20),
+    use_vectorized: bool = Form(True, description="Use Numba-accelerated three-point search"),
+    max_edge_points: int = Form(400, ge=3, le=20000, description="Reject denser edge maps to avoid cubic-time search"),
+    edge_params: dict = Depends(hough_edge_params),
+) -> dict:
+    return {
+        **edge_params,
+        "threshold": threshold,
+        "pair_tolerance": pair_tolerance,
+        "center_tolerance": center_tolerance,
+        "max_ellipses": max_ellipses,
+        "use_vectorized": use_vectorized,
+        "max_edge_points": max_edge_points,
+    }
+
+
+async def run_hough_ellipses(file: UploadFile, params: dict):
+    """Return (original image, list of ellipse dictionaries, edge pixel count)."""
+    image, edges = await prepare_hough_image(file, params)
+    edge_points = int(np.count_nonzero(edges))
+    if edge_points > params["max_edge_points"]:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Ellipse detection received {edge_points} edge pixels, exceeding "
+                f"max_edge_points={params['max_edge_points']}. Resize or thin the edge map, "
+                "or increase max_edge_points (runtime grows cubically)."
+            ),
+        )
+
+    # The scalar implementation is cubic and becomes impractical on dense
+    # maps. The JIT version has the same complexity but a much smaller constant.
+    if edge_points > 120 and (not params["use_vectorized"] or not NUMBA_AVAILABLE):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Ellipse detection without Numba acceleration is limited to 120 "
+                "edge pixels. Use use_vectorized=true with numba installed "
+                "or provide a sparser edge image."
+            ),
+        )
+
+    try:
+        ellipses = await run_in_threadpool(
+            DetectEllipses,
+            edges,
+            pair_tolerance=params["pair_tolerance"],
+            center_tolerance=params["center_tolerance"],
+            threshold=params["threshold"],
+            use_vectorized=params["use_vectorized"],
+            max_ellipses=params["max_ellipses"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return image, ellipses, edge_points
+
+
+@app.post("/hough-ellipses")
+async def hough_ellipses(file: Optional[UploadFile] = File(None), params: dict = Depends(hough_ellipse_params)):
+    """Return ellipse center, semi-axes, orientation and vote count as JSON."""
+    _, ellipses, edge_points = await run_hough_ellipses(file, params)
+    return {
+        "count": len(ellipses),
+        "edge_points": edge_points,
+        "ellipses": [
+            {
+                "center_x": float(e["center_x"]),
+                "center_y": float(e["center_y"]),
+                "a": float(e["a"]),
+                "b": int(e["b"]),
+                "alpha": float(e["alpha"]),
+                "alpha_degrees": float(np.degrees(e["alpha"])),
+                "votes": int(e["count"]),
+            }
+            for e in ellipses
+        ],
+    }
+
+
+@app.post("/hough-ellipses/overlay")
+async def hough_ellipses_overlay(file: Optional[UploadFile] = File(None), params: dict = Depends(hough_ellipse_params)):
+    """Return the uploaded image with detected ellipses drawn in red (PNG)."""
+    image, ellipses, _ = await run_hough_ellipses(file, params)
+    overlay = await run_in_threadpool(DrawEllipses, image, ellipses)
+    return process_image(overlay)
 
 
 # ----------------------------------------------------------------------------
@@ -181,9 +595,9 @@ def snake_params(
     )
 
 
-async def run_active_contour(file: UploadFile, params: dict):
+async def run_active_contour(file: UploadFile, params: dict, save_as_latest: bool = True):
     """Read the image, run the snake in a worker thread. Returns (image, initial, final)."""
-    image = await read_uploaded_image(file, convert_to_grayscale=False)
+    image = await read_uploaded_image(file, convert_to_grayscale=False, save_as_latest=save_as_latest)
 
     try:
         # The snake is CPU-bound pure Python, keep it off the event loop.
@@ -195,17 +609,24 @@ async def run_active_contour(file: UploadFile, params: dict):
 
 
 @app.post("/active-contour/edge-map")
-async def active_contour_edge_map(file: UploadFile = File(...)):
+async def active_contour_edge_map(
+    file: Optional[UploadFile] = File(None),
+    save_as_latest: bool = Form(True),
+):
     """Step 1: the edge map the snake is attracted to (PNG)."""
-    image = await read_uploaded_image(file, convert_to_grayscale=False)
+    image = await read_uploaded_image(file, convert_to_grayscale=False, save_as_latest=save_as_latest)
     edge_map = await run_in_threadpool(compute_edge_map, image)
     return process_image((edge_map * 255).astype(np.uint8))
 
 
 @app.post("/active-contour")
-async def active_contour(file: UploadFile = File(...), params: dict = Depends(snake_params)):
+async def active_contour(
+    file: Optional[UploadFile] = File(None),
+    params: dict = Depends(snake_params),
+    save_as_latest: bool = Form(True),
+):
     """Run the snake and return the initial and final contour points as JSON."""
-    _, initial, final = await run_active_contour(file, params)
+    _, initial, final = await run_active_contour(file, params, save_as_latest)
     return {
         "initial_contour": initial.tolist(),
         "final_contour": final.tolist(),
@@ -214,11 +635,12 @@ async def active_contour(file: UploadFile = File(...), params: dict = Depends(sn
 
 @app.post("/active-contour/iterations")
 async def active_contour_iterations(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
     params: dict = Depends(snake_params),
+    save_as_latest: bool = Form(True),
 ):
     """Stream each snake contour and its Freeman chain code as NDJSON."""
-    image = await read_uploaded_image(file, convert_to_grayscale=False)
+    image = await read_uploaded_image(file, convert_to_grayscale=False, save_as_latest=save_as_latest)
     try:
         initial = await run_in_threadpool(
             prepare_contour, params["points"], image.shape, params["num_points"]
@@ -317,9 +739,13 @@ async def active_contour_iterations(
 
 
 @app.post("/active-contour/overlay")
-async def active_contour_overlay(file: UploadFile = File(...), params: dict = Depends(snake_params)):
+async def active_contour_overlay(
+    file: Optional[UploadFile] = File(None),
+    params: dict = Depends(snake_params),
+    save_as_latest: bool = Form(True),
+):
     """Run the snake and return the image with initial (blue) and final (red) contours drawn on it (PNG)."""
-    image, initial, final = await run_active_contour(file, params)
+    image, initial, final = await run_active_contour(file, params, save_as_latest)
     return process_image(draw_contours(image, initial, final))
 
 # ----------------------------------------------------------------------------
