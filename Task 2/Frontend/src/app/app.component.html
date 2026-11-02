@@ -107,6 +107,28 @@
         </label>
       }
 
+      @if (algorithm === 'lines') {
+  <div class="subheading">Line parameters</div>
+
+  <label class="check-row">
+    <input type="checkbox" [(ngModel)]="useNms" [disabled]="running">
+    Apply Non-Maximum Suppression
+  </label>
+
+  @if (useNms) {
+    <div class="field-row">
+      <div class="field">
+        <label for="rho-distance">Rho suppression distance</label>
+        <input id="rho-distance" type="number" [(ngModel)]="rhoDistance" min="0" [disabled]="running">
+      </div>
+      <div class="field">
+        <label for="theta-distance">Theta suppression bins</label>
+        <input id="theta-distance" type="number" [(ngModel)]="thetaDistance" min="0" [disabled]="running">
+      </div>
+    </div>
+  }
+}
+
       @if (algorithm === 'circles') {
         <div class="subheading">Circle parameters</div>
         <div class="field-row">

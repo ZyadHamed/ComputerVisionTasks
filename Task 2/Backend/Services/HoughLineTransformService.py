@@ -22,9 +22,42 @@ def BuildLinesAccumulator(image: np.ndarray):
 BuildLinesAccumilator = BuildLinesAccumulator
 
 
+def NonMaximumSuppressionLines(accumulator: np.ndarray, thetas: np.ndarray, rhos: np.ndarray,
+                              threshold: int = 100, rho_distance: int = 10, theta_distance: int = 5):
+    scores = accumulator.copy()
+    lines = []
+
+    while True:
+        rho_index, theta_index = np.unravel_index(
+            np.argmax(scores), scores.shape
+        )
+
+        if scores[rho_index, theta_index] <= threshold:
+            break
+
+        lines.append((rhos[rho_index], thetas[theta_index]))
+
+        rho_min = max(0, rho_index - rho_distance)
+        rho_max = min(len(rhos), rho_index + rho_distance + 1)
+
+        theta_min = max(0, theta_index - theta_distance)
+        theta_max = min(len(thetas), theta_index + theta_distance + 1)
+
+        scores[rho_min:rho_max, theta_min:theta_max] = 0
+
+    return np.array(lines).reshape(-1, 2)
+
+
 def _extract_lines(accumulator, thetas, rhos, threshold):
-    rho_indices, theta_indices = np.where(accumulator > threshold)
-    lines = np.column_stack((rhos[rho_indices], thetas[theta_indices]))
+    lines = NonMaximumSuppressionLines(
+        accumulator,
+        thetas,
+        rhos,
+        threshold=threshold,
+        rho_distance=10,
+        theta_distance=5
+    )
+
     return lines, accumulator
 
 
@@ -60,14 +93,33 @@ def GetLinesVectorized(image: np.ndarray, threshold: int = 100):
     return _extract_lines(accumulator, thetas, rhos, threshold)
 
 
-def DetectLines(image: np.ndarray, threshold: int = 100, use_vectorized: bool = True):
+def DetectLines(image: np.ndarray, threshold: int = 100, use_vectorized: bool = True,
+                use_nms: bool = True, rho_distance: int = 10, theta_distance: int = 5):
     """Return (array of [rho, theta_radians], votes accumulator)."""
     if threshold < 0:
         raise ValueError("threshold must be greater than or equal to zero.")
 
     if use_vectorized:
-        return GetLinesVectorized(image, threshold=threshold)
-    return GetLines(image, threshold=threshold)
+        _, accum = GetLinesVectorized(image, threshold=threshold)
+    else:
+        _, accum = GetLines(image, threshold=threshold)
+
+    _, thetas, rhos = BuildLinesAccumulator(image)
+
+    if use_nms:
+        lines = NonMaximumSuppressionLines(
+            accum,
+            thetas,
+            rhos,
+            threshold=threshold,
+            rho_distance=rho_distance,
+            theta_distance=theta_distance
+        )
+    else:
+        rho_indices, theta_indices = np.where(accum > threshold)
+        lines = np.column_stack((rhos[rho_indices], thetas[theta_indices]))
+
+    return lines, accum
 
 
 def DrawLines(image: np.ndarray, polar_coordinates: np.ndarray) -> np.ndarray:

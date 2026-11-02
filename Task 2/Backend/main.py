@@ -313,9 +313,19 @@ async def prepare_hough_image(file: UploadFile, params: dict):
 def hough_line_params(
     threshold: int = Form(100, ge=0, description="Minimum votes (strictly greater)"),
     use_vectorized: bool = Form(True, description="Use fast NumPy implementation"),
+    use_nms: bool = Form(True),
+    rho_distance: int = Form(10, ge=0),
+    theta_distance: int = Form(5, ge=0),
     edge_params: dict = Depends(hough_edge_params),
 ) -> dict:
-    return {**edge_params, "threshold": threshold, "use_vectorized": use_vectorized}
+    return {
+        **edge_params,
+        "threshold": threshold,
+        "use_vectorized": use_vectorized,
+        "use_nms": use_nms,
+        "rho_distance": rho_distance,
+        "theta_distance": theta_distance,
+    }
 
 
 async def run_hough_lines(file: UploadFile, params: dict):
@@ -327,10 +337,13 @@ async def run_hough_lines(file: UploadFile, params: dict):
             edges,
             threshold=params["threshold"],
             use_vectorized=params["use_vectorized"],
+            use_nms=params["use_nms"],
+            rho_distance=params["rho_distance"],
+            theta_distance=params["theta_distance"],
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return image, lines, accumulator
+    return image, lines, accumulator    
 
 
 @app.post("/hough-lines")

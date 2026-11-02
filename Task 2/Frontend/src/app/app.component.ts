@@ -144,6 +144,10 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   maxEllipses = 2;
   maxEdgePoints = 20000;
 
+  useNms = true;
+  rhoDistance = 10;
+  thetaDistance = 5;
+
   // Preserve the existing Snake controls and drag-to-draw experience.
   alpha = 1;
   beta = 1;
@@ -483,9 +487,14 @@ export class AppComponent implements AfterViewInit, OnDestroy {
           propagate: this.cannyPropagate,
         });
         await this.setPort(destination, result, null, 'Canny edges', source, null);
-      } else if (algorithm === 'lines') {
-        const result = await this.processing.detectLines(blob, this.commonHoughParams());
-        await this.setPort(destination, blob, { kind: 'lines', ...result }, 'Hough lines', source, null);
+        } else if (algorithm === 'lines') {
+          const result = await this.processing.detectLines(blob, {
+            ...this.commonHoughParams(),
+            use_nms: this.useNms,
+            rho_distance: this.rhoDistance,
+            theta_distance: this.thetaDistance,
+          });
+          await this.setPort(destination, blob, { kind: 'lines', ...result }, 'Hough lines', source, null);
       } else if (algorithm === 'circles') {
         const result = await this.processing.detectCircles(blob, {
           ...this.commonHoughParams(),
