@@ -135,8 +135,6 @@ def _FindBestEllipseRandomized(
     xs, ys, pairs, pair_tolerance, center_tolerance, threshold,
     fit_tolerance, min_b, min_coverage, min_score, sample_scale
 ):
-    best_b = 0
-    min_distance_squared = center_tolerance ** 2
     global_best_count = 0
     global_best_score = 0.0
     global_best_center_x = 0.0
