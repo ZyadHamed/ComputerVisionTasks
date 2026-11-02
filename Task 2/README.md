@@ -52,40 +52,6 @@ The screenshots show the interface and example image-processing results for the 
 
 For Hough transforms, the backend can overlay detected shapes on the original image. For active contours, the overlay endpoint draws the **initial contour in blue** and the **final contour in red**.
 
-## API Reference
-
-All processing routes use **POST** and accept form fields. Most image-processing routes accept an optional multipart `file`; when it is omitted, the API uses the previously saved image.
-
-### Image Management
-
-| Method | Endpoint | Response | Description |
-| --- | --- | --- | --- |
-| `GET` | `/` | JSON | Simple API-running status message |
-| `POST` | `/images/upload` | JSON | Save an uploaded image and return width, height, and channel count |
-| `GET` | `/images/latest` | PNG | Retrieve the latest saved image |
-
-### Edge and Shape Detection
-
-| Method | Endpoint | Response | Description |
-| --- | --- | --- | --- |
-| `POST` | `/canny` | PNG | Canny edge map |
-| `POST` | `/hough-lines` | JSON | Detected line coordinates and accumulator shape |
-| `POST` | `/hough-lines/overlay` | PNG | Detected lines drawn on the image |
-| `POST` | `/hough-circles` | JSON | Detected circle centers, radii, votes, and accumulator shape |
-| `POST` | `/hough-circles/overlay` | PNG | Detected circles drawn on the image |
-| `POST` | `/hough-ellipses` | JSON | Detected ellipse geometry, votes, and number of edge points |
-| `POST` | `/hough-ellipses/overlay` | PNG | Detected ellipses drawn on the image |
-
-### Active Contours and Chain Codes
-
-| Method | Endpoint | Response | Description |
-| --- | --- | --- | --- |
-| `POST` | `/active-contour/edge-map` | PNG | Edge map used to attract the snake |
-| `POST` | `/active-contour` | JSON | Initial and final contour coordinates |
-| `POST` | `/active-contour/iterations` | NDJSON stream | Contour, chain code, and convergence details for each iteration; final area and perimeter |
-| `POST` | `/active-contour/overlay` | PNG | Image with the initial and final contours |
-| `POST` | `/chain-code` | JSON | Freeman 8-direction chain code and starting pixel for supplied contour points |
-
 ### Important Parameters
 
 **Canny (`/canny`)**
