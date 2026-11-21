@@ -24,6 +24,10 @@ from Backend.Services.FeatureMatchingService import (
     to_rgb_uint8,
     to_gray,
 )
+from Backend.Services.SIFTService import (
+    extract_sift_features,
+    draw_sift_keypoints,
+)
 
 
 
@@ -35,8 +39,14 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
-    # Lets the browser read the match stats sent with the visualization PNG.
-    expose_headers=["X-Match-Count", "X-Matching-Time-Ms", "X-Descriptor-Time-Ms"],
+    # Lets the browser read match stats and SIFT stats sent with visualization PNGs.
+    expose_headers=[
+        "X-Match-Count",
+        "X-Matching-Time-Ms",
+        "X-Descriptor-Time-Ms",
+        "X-Keypoint-Count",
+        "X-Execution-Time-Ms",
+    ],
 )
 
 
@@ -197,7 +207,6 @@ def get_latest_image():
             status_code=500,
             detail=f"Could not load the stored image: {exc}",
         ) from exc
-
     return Response(
         content=image_data,
         media_type="image/png",
@@ -327,4 +336,110 @@ async def visualize_feature_matches(
     response.headers["X-Match-Count"] = str(result["num_matches"])
     response.headers["X-Matching-Time-Ms"] = str(result["matching_time_ms"])
     response.headers["X-Descriptor-Time-Ms"] = str(result["descriptor_time_ms"])
+    return response
+
+
+# ----------------------------------------------------------------------------
+# SIFT Feature Extraction and Visualization
+# ----------------------------------------------------------------------------
+#
+# Multipart form fields for SIFT endpoints:
+#   file                 file, optional    image to process (defaults to latest uploaded image)
+#   max_keypoints        int, optional     maximum keypoints to retain by magnitude of response (default 500)
+#   contrast_threshold   float             subpixel contrast threshold (default 0.03)
+#   edge_threshold       float             ratio of principal curvatures threshold (default 10.0)
+#   num_octaves          int               number of octaves in scale space (default 3)
+#   num_intervals        int               number of scale intervals per octave (default 3)
+#   sigma                float             base scale standard deviation (default 1.6)
+#   assumed_blur         float             initial image blur assumption (default 0.5)
+#   num_cells            int               descriptor grid cells per dimension (default 4 -> 4x4 grid)
+#   num_bins             int               descriptor orientation bins per cell (default 8 -> 128-D)
+#   peak_ratio           float             dominant orientation detection ratio (default 0.8)
+#   descriptor_threshold float             descriptor clipping threshold (default 0.2)
+#   save_as_latest       bool              whether to persist file as latest image (default false)
+#   circle_radius        int, optional     visualization circle radius; None scales with keypoint sigma
+#   draw_orientation     bool              whether to draw canonical orientation vector (default true)
+
+def get_sift_params(
+    max_keypoints: Optional[int] = Form(500, ge=1),
+    contrast_threshold: float = Form(0.03, gt=0),
+    edge_threshold: float = Form(10.0, gt=0),
+    num_octaves: int = Form(3, ge=1, le=8),
+    num_intervals: int = Form(3, ge=1, le=10),
+    sigma: float = Form(1.6, gt=0),
+    assumed_blur: float = Form(0.5, ge=0),
+    num_cells: int = Form(4, ge=2, le=8),
+    num_bins: int = Form(8, ge=4, le=36),
+    peak_ratio: float = Form(0.8, gt=0, le=1.0),
+    descriptor_threshold: float = Form(0.2, gt=0, le=1.0),
+) -> dict:
+    return {
+        "max_keypoints": max_keypoints,
+        "contrast_threshold": contrast_threshold,
+        "edge_threshold": edge_threshold,
+        "num_octaves": num_octaves,
+        "num_intervals": num_intervals,
+        "sigma": sigma,
+        "assumed_blur": assumed_blur,
+        "num_cells": num_cells,
+        "num_bins": num_bins,
+        "peak_ratio": peak_ratio,
+        "descriptor_threshold": descriptor_threshold,
+    }
+
+
+@app.post("/features/sift")
+@app.post("/sift")
+@app.post("/sift/detect")
+async def extract_sift_endpoint(
+    file: Optional[UploadFile] = File(None),
+    save_as_latest: bool = Form(False),
+    params: dict = Depends(get_sift_params),
+):
+    """Extract SIFT keypoints and 128-D descriptors from an image.
+
+    If file is omitted, processes the most recently saved image.
+    The response format is directly compatible with POST /features/match:
+      {
+        "keypoints": [[x, y], ...],
+        "descriptors": [[d0, ..., d127], ...],
+        "keypoint_details": [{x, y, sigma, angle, response, octave, scale}, ...],
+        "num_keypoints": N,
+        "execution_time_ms": float
+      }
+    """
+    image = await read_uploaded_image(
+        file, convert_to_grayscale=False, save_as_latest=save_as_latest
+    )
+    result = await run_in_threadpool(extract_sift_features, image, **params)
+    return result
+
+
+@app.post("/features/sift/visualize")
+@app.post("/sift/visualize")
+async def visualize_sift_endpoint(
+    file: Optional[UploadFile] = File(None),
+    circle_radius: Optional[int] = Form(None, ge=1, le=100),
+    draw_orientation: bool = Form(True),
+    save_as_latest: bool = Form(False),
+    params: dict = Depends(get_sift_params),
+):
+    """Extract SIFT keypoints and return a PNG with scale circles and orientation rays.
+
+    Stats are included in the X-Keypoint-Count and X-Execution-Time-Ms headers.
+    """
+    image = await read_uploaded_image(
+        file, convert_to_grayscale=False, save_as_latest=save_as_latest
+    )
+    result = await run_in_threadpool(extract_sift_features, image, **params)
+    canvas = await run_in_threadpool(
+        draw_sift_keypoints,
+        image,
+        result["keypoint_details"],
+        circle_radius,
+        draw_orientation,
+    )
+    response = process_image(canvas)
+    response.headers["X-Keypoint-Count"] = str(result["num_keypoints"])
+    response.headers["X-Execution-Time-Ms"] = str(result["execution_time_ms"])
     return response

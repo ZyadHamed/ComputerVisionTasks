@@ -112,3 +112,57 @@ The contour endpoints (except `/active-contour/edge-map`) require a `contour` fo
 - **Ellipse performance:** The three-point ellipse search is computationally expensive. The default `max_edge_points` is `400`. Without Numba acceleration, inputs with more than `120` edge pixels are rejected; consider a smaller or sparser image.
 - **CORS:** The provided backend allows all origins, methods, and headers. Restrict these settings before deploying to an environment where cross-origin access needs to be controlled.
 - **Validation:** Invalid images and algorithm parameters can produce `400` responses, oversized images produce `413`, and FastAPI also validates form-field ranges.
+
+
+## SIFT Feature Extraction & Matching (Task 3)
+
+### SIFT Service Architecture (`Backend/Services/SIFTService.py`)
+
+The SIFT service follows the exact pipeline and algorithmic structure implemented in `SIFT_(1).ipynb`:
+
+1. **Keypoint Detection:**
+   - `Generate_Scale_Space(image, num_octaves=3, num_intervals=3, sigma=1.6, assumed_blur=0.5)`: Generates octave pyramid with incremental Gaussian blurring.
+   - `Calculate_DoG(scale_space)`: Differences of adjacent Gaussian blurred levels across each octave.
+   - `Detect_Local_Extrema(dog_space)`: Vectorized 3D local extrema detection across 26 spatial/scale neighbors.
+   - `Localize_And_Filter_Keypoints(dog_space, candidates, contrast_threshold=0.03, edge_threshold=10)`: Subpixel quadratic Taylor expansion, low-contrast removal, and principal curvature ratio edge elimination.
+   - `Detect_Keypoints(image, return_scale_space=False, ...)`: Complete detection pipeline returning localized keypoints and optional scale space.
+
+2. **Orientation Assignment:**
+   - `Calculate_Gradients(gaussian_image)`: Computes gradient magnitude and orientation in `[0, 360)` degrees.
+   - `Apply_Gaussian_Weighting(magnitude, orientation, x, y, sigma)`: Applies `1.5 * sigma` Gaussian window weighting to local gradients.
+   - `Build_Orientation_Histogram(weighted_magnitude, orientation, num_bins=36)`: Accumulates 36-bin histogram of weighted orientations.
+   - `Assign_Dominant_Orientation(histogram, num_bins=36, peak_ratio=0.8)`: 5-tap binomial smoothing, peak detection, and sub-bin parabolic interpolation.
+   - `Assign_Orientation_To_Keypoint(kp, scale_space, num_intervals=3)`: Identifies dominant canonical orientations for each keypoint.
+
+3. **Descriptor Neighborhood Preparation:**
+   - `Extract_Local_Neighborhood(gaussian_image, keypoint)`: Extracts local window in octave scale (`8 * sigma`).
+   - `Rotate_Neighborhood(neighborhood, keypoint_orientation)`: Rotates patch around center to keypoint orientation via bilinear affine warp.
+   - `Normalize_Orientation(local_orientations, keypoint_orientation)`: Normalizes local gradient angles relative to canonical keypoint orientation.
+   - `Apply_Descriptor_Gaussian_Weighting(gradient_magnitude, neighborhood_sigma=None)`: Center-weighted Gaussian decay on descriptor patch.
+
+4. **Descriptor Histogram & Trilinear Interpolation:**
+   - `Divide_Into_Cells(neighborhood, num_cells=4)`: Splits neighborhood patch into 4x4 spatial cells.
+   - `Calculate_Local_Gradients(neighborhood)`: Computes local patch gradients.
+   - `Build_Local_Orientation_Histograms(cells, ...)`: Cell-wise histograms.
+   - `Apply_Trilinear_Interpolation(gradient_magnitude, gradient_orientation, num_cells=4, num_bins=8)`: Distributes samples across spatial (row, col) and angular bins.
+   - `Concatenate_Histograms(histograms)`: Flattens 4x4x8 3D tensor into a 128-D descriptor vector.
+
+5. **Descriptor Normalization:**
+   - `Normalize_Descriptor(descriptor)`: L2 unit normalization.
+   - `Threshold_And_Renormalize(descriptor, threshold=0.2)`: Clamps large gradient spikes to 0.2 and re-normalizes to unit length.
+
+6. **End-to-End Pipeline & Visualization:**
+   - `compute_descriptor(kp, scale_space, theta)`: Produces normalized 128-D descriptor for an oriented keypoint.
+   - `extract_sift_features(image, ...)`: High-level entry point returning `{ keypoints, descriptors, keypoint_details, num_keypoints, execution_time_ms }`.
+   - `draw_sift_keypoints(image, keypoints, circle_radius, draw_orientation)`: Visualizes detected keypoints with scale circles and canonical orientation rays.
+   - `circ_diff(a, b)`: Angular difference accounting for 0/360 wrap-around.
+
+### SIFT Endpoints
+
+- **`POST /features/sift`** (aliases: `POST /sift`, `POST /sift/detect`)
+  - Form parameters: `file` (optional, falls back to latest image), `max_keypoints` (default 500), `contrast_threshold` (0.03), `edge_threshold` (10.0), `num_octaves` (3), `num_intervals` (3), `sigma` (1.6), `assumed_blur` (0.5), `save_as_latest` (false).
+  - Returns JSON with `keypoints` (`(N, 2)` format) and `descriptors` (`(N, 128)` format), directly compatible with `POST /features/match`.
+
+- **`POST /features/sift/visualize`** (alias: `POST /sift/visualize`)
+  - Form parameters: same detection parameters + `circle_radius` (optional), `draw_orientation` (boolean, default true).
+  - Returns rendered PNG image with keypoint circles and orientation rays, accompanied by `X-Keypoint-Count` and `X-Execution-Time-Ms` response headers.
