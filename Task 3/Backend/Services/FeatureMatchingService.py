@@ -24,7 +24,10 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from Backend.Services.UtilitiesService import TransformIntoGrayScale
+try:
+    from Backend.Services.UtilitiesService import TransformIntoGrayScale
+except ModuleNotFoundError:
+    from Services.UtilitiesService import TransformIntoGrayScale
 
 SUPPORTED_METHODS = ("sift", "harris")
 SUPPORTED_METRICS = ("ssd", "ncc")

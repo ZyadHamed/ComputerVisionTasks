@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# Ensure the Task 3 directory is on sys.path so 'Backend' package is always resolvable
+_project_root = str(Path(__file__).resolve().parents[1])
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import json
 from io import BytesIO
 from typing import Optional
@@ -222,8 +230,8 @@ def get_latest_image():
 #
 #   image1     file, optional  first image (falls back to the latest uploaded image)
 #   image2     file, required  second image
-#   features1  JSON string     {"keypoints": [[x, y], ...], "descriptors": [[...], ...]}
-#   features2  JSON string     same layout, for image2
+#   features1  JSON file       {"keypoints": [[x, y], ...], "descriptors": [[...], ...]}
+#   features2  JSON file       same layout, for image2
 #   method     "sift" | "harris"            (default "sift")
 #   metric     "ssd" | "ncc"                (default "ssd")
 #   ratio      float in (0, 1]              ratio test; 1 disables it (default 0.8)
@@ -260,8 +268,8 @@ def get_match_params(
 async def compute_feature_matches(
     image1: Optional[UploadFile],
     image2: UploadFile,
-    features1: str,
-    features2: str,
+    features1: UploadFile,
+    features2: UploadFile,
     params: dict,
 ):
     """Load both images, parse the feature JSON and run the matcher."""
@@ -273,14 +281,23 @@ async def compute_feature_matches(
         await read_uploaded_image(image2, convert_to_grayscale=False, save_as_latest=False)
     )
 
-    try:
-        feats1 = json.loads(features1)
-        feats2 = json.loads(features2)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"features1/features2 must be valid JSON: {exc}",
-        ) from exc
+    async def read_feature_file(upload: UploadFile, name: str):
+        contents = await upload.read(MAX_UPLOAD_BYTES + 1)
+        if len(contents) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"{name} exceeds the 25 MiB limit.",
+            )
+        try:
+            return json.loads(contents.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{name} must be a valid UTF-8 JSON file: {exc}",
+            ) from exc
+
+    feats1 = await read_feature_file(features1, "features1")
+    feats2 = await read_feature_file(features2, "features2")
 
     try:
         result = await run_in_threadpool(
@@ -299,8 +316,8 @@ async def compute_feature_matches(
 async def match_features(
     image1: Optional[UploadFile] = File(None),
     image2: UploadFile = File(...),
-    features1: str = Form(...),
-    features2: str = Form(...),
+    features1: UploadFile = File(...),
+    features2: UploadFile = File(...),
     params: dict = Depends(get_match_params),
 ):
     """Match Harris or SIFT features between two images with SSD or NCC.
@@ -315,8 +332,8 @@ async def match_features(
 async def visualize_feature_matches(
     image1: Optional[UploadFile] = File(None),
     image2: UploadFile = File(...),
-    features1: str = Form(...),
-    features2: str = Form(...),
+    features1: UploadFile = File(...),
+    features2: UploadFile = File(...),
     circle_radius: int = Form(8, ge=1, le=100),
     draw_lines: bool = Form(True),
     params: dict = Depends(get_match_params),

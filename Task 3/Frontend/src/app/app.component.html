@@ -1,0 +1,385 @@
+<!-- ─── Top bar ──────────────────────────────────────────────────────────────── -->
+<header class="topbar">
+  <div class="topbar-brand">
+    <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      <circle cx="11" cy="11" r="3"/><line x1="11" y1="8" x2="11" y2="8.01"/>
+    </svg>
+    <span class="brand-title">Feature Detection</span>
+    <span class="brand-sub">Feature Extraction &amp; Matching</span>
+  </div>
+  <nav class="tab-nav" role="tablist">
+    <button role="tab" [class.active]="activeTab === 'keypoints'" (click)="setTab('keypoints')" [attr.aria-selected]="activeTab === 'keypoints'">
+      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="10" cy="10" r="4"/><path d="M10 1v3M10 16v3M1 10h3M16 10h3M3.22 3.22l2.12 2.12M14.66 14.66l2.12 2.12M3.22 16.78l2.12-2.12M14.66 5.34l2.12-2.12"/></svg>
+      SIFT Keypoints
+    </button>
+    <button role="tab" [class.active]="activeTab === 'matching'" (click)="setTab('matching')" [attr.aria-selected]="activeTab === 'matching'">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="4" width="6" height="12" rx="1"/><rect x="12" y="4" width="6" height="12" rx="1"/><line x1="8" y1="10" x2="12" y2="10"/></svg>
+      Feature Matching
+    </button>
+  </nav>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     TAB 1: SIFT KEYPOINTS
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="workspace" *ngIf="activeTab === 'keypoints'">
+
+  <!-- Left sidebar -->
+  <aside class="sidebar">
+
+    <!-- File upload -->
+    <section class="sidebar-section">
+      <h3 class="section-title">Image</h3>
+      <div class="dropzone" [class.dragover]="kpDragOver"
+           (dragover)="onKpDragOver($event)" (dragleave)="onKpDragLeave()" (drop)="onKpDrop($event)"
+           (click)="kpFileInput.click()" tabindex="0" role="button" aria-label="Upload image"
+           (keydown.enter)="kpFileInput.click()" (keydown.space)="kpFileInput.click()">
+        <svg class="dz-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <span class="dz-label">{{ kpImageSlot.name || 'Click or drag an image here' }}</span>
+        <input #kpFileInput type="file" accept="image/*" (change)="onKpFileInput($event)" hidden>
+      </div>
+    </section>
+
+    <!-- Detection parameters -->
+    <section class="sidebar-section collapsible" [class.open]="detectionOpen">
+      <button class="collapsible-header" (click)="detectionOpen = !detectionOpen" [attr.aria-expanded]="detectionOpen">
+        Detection Parameters
+        <svg class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4"/></svg>
+      </button>
+      <div class="collapsible-body">
+        <label class="param-label">Max keypoints <span class="param-val">{{ maxKeypoints }}</span></label>
+        <input type="range" min="100" max="2000" step="50" [(ngModel)]="maxKeypoints">
+
+        <label class="param-label">Contrast threshold <span class="param-val">{{ contrastThreshold | number:'1.3-3' }}</span></label>
+        <input type="range" min="0.001" max="0.1" step="0.001" [(ngModel)]="contrastThreshold">
+
+        <label class="param-label">Edge threshold <span class="param-val">{{ edgeThreshold }}</span></label>
+        <input type="range" min="1" max="20" step="0.5" [(ngModel)]="edgeThreshold">
+
+        <label class="param-label">Num octaves <span class="param-val">{{ numOctaves }}</span></label>
+        <input type="range" min="1" max="6" step="1" [(ngModel)]="numOctaves">
+
+        <label class="param-label">Num intervals <span class="param-val">{{ numIntervals }}</span></label>
+        <input type="range" min="1" max="8" step="1" [(ngModel)]="numIntervals">
+
+        <label class="param-label">Sigma <span class="param-val">{{ sigma | number:'1.1-1' }}</span></label>
+        <input type="range" min="0.5" max="3.0" step="0.1" [(ngModel)]="sigma">
+
+        <label class="param-label">Assumed blur <span class="param-val">{{ assumedBlur | number:'1.1-1' }}</span></label>
+        <input type="range" min="0" max="1" step="0.1" [(ngModel)]="assumedBlur">
+      </div>
+    </section>
+
+    <!-- Visualization options -->
+    <section class="sidebar-section collapsible" [class.open]="vizOpen">
+      <button class="collapsible-header" (click)="vizOpen = !vizOpen" [attr.aria-expanded]="vizOpen">
+        Visualization Options
+        <svg class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4"/></svg>
+      </button>
+      <div class="collapsible-body">
+        <label class="param-label">Circle radius (empty = auto)</label>
+        <input class="num-input" type="number" min="1" max="50" placeholder="auto"
+               [ngModel]="circleRadius" (ngModelChange)="circleRadius = $event || null">
+
+        <label class="checkbox-label">
+          <input type="checkbox" [(ngModel)]="drawOrientation">
+          Draw orientation
+        </label>
+      </div>
+    </section>
+
+    <!-- Action buttons -->
+    <div class="btn-group">
+      <button class="btn btn-primary" [disabled]="kpLoading" (click)="detectKeypoints()">
+        <span *ngIf="!kpLoading">Detect Keypoints</span>
+        <span *ngIf="kpLoading" class="spinner-wrap"><span class="spinner"></span>Processing…</span>
+      </button>
+      <button class="btn btn-secondary" [disabled]="kpLoading" (click)="visualizeKeypoints()">
+        <span *ngIf="!kpLoading">Visualize Keypoints</span>
+        <span *ngIf="kpLoading" class="spinner-wrap"><span class="spinner"></span>Processing…</span>
+      </button>
+    </div>
+
+    <!-- Error message -->
+    <div class="error-banner" *ngIf="kpError">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+      {{ kpError }}
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="content">
+    <div class="viewport-row">
+
+      <!-- Input viewport -->
+      <div class="viewport-card">
+        <div class="viewport-label">Input</div>
+        <div class="viewport-frame" [class.empty]="!kpImageSlot.url">
+          <img *ngIf="kpImageSlot.url" [src]="kpImageSlot.url" class="viewport-img" alt="Input image">
+          <div *ngIf="!kpImageSlot.url" class="placeholder">
+            <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="10" width="36" height="28" rx="3"/><circle cx="17" cy="21" r="4"/><path d="M6 32l10-8 8 6 6-5 12 9"/></svg>
+            <p>No image uploaded</p>
+            <p class="placeholder-hint">Use the sidebar to upload an image</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Output viewport -->
+      <div class="viewport-card">
+        <div class="viewport-label">Output (Keypoints)</div>
+        <div class="viewport-frame" [class.empty]="!kpOutputUrl">
+          <img *ngIf="kpOutputUrl" [src]="kpOutputUrl" class="viewport-img" alt="Keypoint visualization">
+          <div *ngIf="!kpOutputUrl && kpLoading" class="placeholder loading-placeholder">
+            <span class="spinner lg"></span>
+            <p>Detecting keypoints…</p>
+          </div>
+          <div *ngIf="!kpOutputUrl && !kpLoading" class="placeholder">
+            <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="24" cy="24" r="12"/><circle cx="24" cy="24" r="4"/><line x1="24" y1="8" x2="24" y2="12"/><line x1="24" y1="36" x2="24" y2="40"/><line x1="8" y1="24" x2="12" y2="24"/><line x1="36" y1="24" x2="40" y2="24"/></svg>
+            <p>No result yet</p>
+            <p class="placeholder-hint">Run detection or visualization</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Stats bar -->
+    <div class="stats-bar" *ngIf="kpKeypointCount !== null || kpTimeMs !== null">
+      <span class="stat" *ngIf="kpKeypointCount !== null">
+        <span class="stat-label">Keypoints detected</span>
+        <span class="stat-value">{{ kpKeypointCount | number }}</span>
+      </span>
+      <span class="stat-sep" *ngIf="kpKeypointCount !== null && kpTimeMs !== null"></span>
+      <span class="stat" *ngIf="kpTimeMs !== null">
+        <span class="stat-label">Time</span>
+        <span class="stat-value">{{ formatMs(kpTimeMs) }}</span>
+      </span>
+    </div>
+  </main>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     TAB 2: FEATURE MATCHING
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="workspace" *ngIf="activeTab === 'matching'">
+
+  <!-- Left sidebar -->
+  <aside class="sidebar">
+
+    <!-- Image 1 upload -->
+    <section class="sidebar-section">
+      <h3 class="section-title">Image 1</h3>
+      <label class="checkbox-label mb-6">
+        <input type="checkbox" [(ngModel)]="useLatestForImage1" [disabled]="useExtractedSiftForImage1"
+               (ngModelChange)="clearLatestImagePreview()">
+        Use latest stored image
+      </label>
+      <label class="checkbox-label mb-6" *ngIf="kpSiftResult && kpImageSlot.blob">
+        <input type="checkbox" [(ngModel)]="useExtractedSiftForImage1" [disabled]="useLatestForImage1">
+        Use SIFT descriptors from Keypoints tab
+      </label>
+      <div class="dropzone sm" [class.dragover]="matchDrag1"
+           [class.disabled]="useLatestForImage1 || useExtractedSiftForImage1"
+           (dragover)="!useLatestForImage1 && !useExtractedSiftForImage1 && onMatch1DragOver($event)"
+           (dragleave)="onMatch1DragLeave()"
+           (drop)="!useLatestForImage1 && !useExtractedSiftForImage1 && onMatch1Drop($event)"
+           (click)="!useLatestForImage1 && !useExtractedSiftForImage1 && match1Input.click()"
+           tabindex="0" role="button" aria-label="Upload image 1"
+           (keydown.enter)="!useLatestForImage1 && !useExtractedSiftForImage1 && match1Input.click()">
+        <div class="dz-thumb-wrap" *ngIf="matchSlot1.url && !useLatestForImage1 && !useExtractedSiftForImage1">
+          <img [src]="matchSlot1.url" class="dz-thumb" alt="Image 1 thumbnail">
+          <span class="dz-name">{{ matchSlot1.name }}</span>
+        </div>
+        <div class="dz-empty" *ngIf="!matchSlot1.url || useLatestForImage1 || useExtractedSiftForImage1">
+          <svg class="dz-icon sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span class="dz-label">{{ useLatestForImage1 ? 'Using latest stored' : useExtractedSiftForImage1 ? 'Using extracted SIFT image' : 'Click or drop image 1' }}</span>
+        </div>
+        <input #match1Input type="file" accept="image/*" (change)="onMatch1FileInput($event)" hidden>
+      </div>
+    </section>
+
+    <!-- Image 2 upload -->
+    <section class="sidebar-section">
+      <h3 class="section-title">Image 2</h3>
+      <div class="dropzone sm" [class.dragover]="matchDrag2"
+           (dragover)="onMatch2DragOver($event)" (dragleave)="onMatch2DragLeave()" (drop)="onMatch2Drop($event)"
+           (click)="match2Input.click()" tabindex="0" role="button"
+           aria-label="Upload image 2" (keydown.enter)="match2Input.click()">
+        <div class="dz-thumb-wrap" *ngIf="matchSlot2.url">
+          <img [src]="matchSlot2.url" class="dz-thumb" alt="Image 2 thumbnail">
+          <span class="dz-name">{{ matchSlot2.name }}</span>
+        </div>
+        <div class="dz-empty" *ngIf="!matchSlot2.url">
+          <svg class="dz-icon sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span class="dz-label">Click or drop image 2</span>
+        </div>
+        <input #match2Input type="file" accept="image/*" (change)="onMatch2FileInput($event)" hidden>
+      </div>
+    </section>
+
+    <!-- SIFT Detection params (shared) -->
+    <section class="sidebar-section collapsible" [class.open]="matchDetectionOpen">
+      <button class="collapsible-header" (click)="matchDetectionOpen = !matchDetectionOpen" [attr.aria-expanded]="matchDetectionOpen">
+        SIFT Detection Parameters
+        <svg class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4"/></svg>
+      </button>
+      <div class="collapsible-body">
+        <label class="param-label">Max keypoints <span class="param-val">{{ maxKeypoints }}</span></label>
+        <input type="range" min="100" max="2000" step="50" [(ngModel)]="maxKeypoints">
+
+        <label class="param-label">Contrast threshold <span class="param-val">{{ contrastThreshold | number:'1.3-3' }}</span></label>
+        <input type="range" min="0.001" max="0.1" step="0.001" [(ngModel)]="contrastThreshold">
+
+        <label class="param-label">Edge threshold <span class="param-val">{{ edgeThreshold }}</span></label>
+        <input type="range" min="1" max="20" step="0.5" [(ngModel)]="edgeThreshold">
+
+        <label class="param-label">Num octaves <span class="param-val">{{ numOctaves }}</span></label>
+        <input type="range" min="1" max="6" step="1" [(ngModel)]="numOctaves">
+
+        <label class="param-label">Num intervals <span class="param-val">{{ numIntervals }}</span></label>
+        <input type="range" min="1" max="8" step="1" [(ngModel)]="numIntervals">
+
+        <label class="param-label">Sigma <span class="param-val">{{ sigma | number:'1.1-1' }}</span></label>
+        <input type="range" min="0.5" max="3.0" step="0.1" [(ngModel)]="sigma">
+
+        <label class="param-label">Assumed blur <span class="param-val">{{ assumedBlur | number:'1.1-1' }}</span></label>
+        <input type="range" min="0" max="1" step="0.1" [(ngModel)]="assumedBlur">
+      </div>
+    </section>
+
+    <!-- Matching parameters -->
+    <section class="sidebar-section collapsible" [class.open]="matchParamsOpen">
+      <button class="collapsible-header" (click)="matchParamsOpen = !matchParamsOpen" [attr.aria-expanded]="matchParamsOpen">
+        Matching Parameters
+        <svg class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4"/></svg>
+      </button>
+      <div class="collapsible-body">
+        <p class="match-pipeline-note">
+          SIFT descriptors are compared across both images. For each Image 1 descriptor,
+          the matcher finds two nearest candidates in Image 2 and accepts the best only
+          when its distance ratio is below the threshold.
+        </p>
+
+        <label class="param-label">Descriptor distance</label>
+        <div class="radio-group">
+          <label class="radio-label">
+            <input type="radio" name="metric" value="ssd" [(ngModel)]="matchMetric"> Euclidean (SSD)
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="metric" value="ncc" [(ngModel)]="matchMetric"> Normalized correlation (NCC)
+          </label>
+        </div>
+
+        <label class="param-label">Ratio threshold <span class="param-val">{{ ratioThreshold | number:'1.2-2' }}</span></label>
+        <input type="range" min="0.10" max="0.99" step="0.01" [(ngModel)]="ratioThreshold">
+        <p class="param-hint">Accept the best candidate when d1 / d2 &lt; {{ ratioThreshold | number:'1.2-2' }}. Default: 0.75.</p>
+
+        <label class="checkbox-label" title="Keep a pair only when each descriptor is the other's nearest neighbor.">
+          <input type="checkbox" [(ngModel)]="crossCheck">
+          Mutual nearest-neighbor check (optional)
+        </label>
+
+        <label class="param-label">Max matches (empty = unlimited)</label>
+        <input class="num-input" type="number" min="1" placeholder="unlimited"
+               [ngModel]="maxMatches" (ngModelChange)="maxMatches = $event || null">
+      </div>
+    </section>
+
+    <!-- Action button -->
+    <div class="btn-group">
+      <button class="btn btn-primary" [disabled]="!canMatch" (click)="extractAndMatch()">
+        <span *ngIf="!matchLoading">Extract &amp; Match Features</span>
+        <span *ngIf="matchLoading" class="spinner-wrap"><span class="spinner"></span>Processing…</span>
+      </button>
+    </div>
+
+    <!-- Error banner -->
+    <div class="error-banner" *ngIf="matchError">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+      {{ matchError }}
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="content">
+    <div class="viewport-row">
+
+      <!-- Input viewport: Image 1 preview -->
+      <div class="viewport-card">
+        <div class="viewport-label">Input 1 {{ useLatestForImage1 ? '(latest stored)' : useExtractedSiftForImage1 ? '(SIFT tab)' : '' }}</div>
+        <div class="viewport-frame" [class.empty]="!matchSlot1.url && !useLatestForImage1 && !useExtractedSiftForImage1">
+          <img *ngIf="useExtractedSiftForImage1 && kpImageSlot.url" [src]="kpImageSlot.url" class="viewport-img" alt="Image used for extracted SIFT descriptors">
+          <img *ngIf="matchSlot1.url && !useLatestForImage1 && !useExtractedSiftForImage1" [src]="matchSlot1.url" class="viewport-img" alt="Image 1">
+          <img *ngIf="useLatestForImage1 && matchLatestImageUrl" [src]="matchLatestImageUrl" class="viewport-img" alt="Latest stored image">
+          <div *ngIf="useLatestForImage1 && !matchLatestImageUrl" class="placeholder info-placeholder">
+            <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="24" cy="24" r="16"/><line x1="24" y1="20" x2="24" y2="28"/><circle cx="24" cy="16" r="1" fill="currentColor"/></svg>
+            <p>Using latest stored image</p>
+          </div>
+          <div *ngIf="!matchSlot1.url && !useLatestForImage1 && !useExtractedSiftForImage1" class="placeholder">
+            <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="10" width="36" height="28" rx="3"/><circle cx="17" cy="21" r="4"/><path d="M6 32l10-8 8 6 6-5 12 9"/></svg>
+            <p>No input 1 selected</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input viewport: Image 2 preview -->
+      <div class="viewport-card">
+        <div class="viewport-label">Input 2</div>
+        <div class="viewport-frame" [class.empty]="!matchSlot2.url">
+          <img *ngIf="matchSlot2.url" [src]="matchSlot2.url" class="viewport-img" alt="Image 2">
+          <div *ngIf="!matchSlot2.url" class="placeholder">
+            <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="10" width="36" height="28" rx="3"/><circle cx="17" cy="21" r="4"/><path d="M6 32l10-8 8 6 6-5 12 9"/></svg>
+            <p>No input 2 selected</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Output viewport: match visualization -->
+      <div class="viewport-card">
+        <div class="viewport-label">Output (Match Visualization)</div>
+        <div class="viewport-frame" [class.empty]="!matchOutputUrl">
+          <img *ngIf="matchOutputUrl" [src]="matchOutputUrl" class="viewport-img" alt="Match visualization">
+          <div *ngIf="!matchOutputUrl && matchLoading" class="placeholder loading-placeholder">
+            <span class="spinner lg"></span>
+            <p>Extracting &amp; matching features…</p>
+          </div>
+          <div *ngIf="!matchOutputUrl && !matchLoading" class="placeholder">
+            <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="12" width="16" height="24" rx="2"/><rect x="28" y="12" width="16" height="24" rx="2"/><line x1="20" y1="24" x2="28" y2="24"/></svg>
+            <p>No result yet</p>
+            <p class="placeholder-hint">Upload both images and click "Extract &amp; Match"</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Stats bar -->
+    <div class="stats-bar" *ngIf="matchCount !== null || matchTimeMs !== null">
+      <span class="stat" *ngIf="matchCount !== null">
+        <span class="stat-label">Matches</span>
+        <span class="stat-value">{{ matchCount | number }}</span>
+      </span>
+      <span class="stat-sep" *ngIf="matchCount !== null && matchTimeMs !== null"></span>
+      <span class="stat" *ngIf="matchTimeMs !== null">
+        <span class="stat-label">Matching time</span>
+        <span class="stat-value">{{ formatMs(matchTimeMs) }}</span>
+      </span>
+      <span class="stat-sep" *ngIf="matchTimeMs !== null && matchDescMs !== null"></span>
+      <span class="stat" *ngIf="matchDescMs !== null">
+        <span class="stat-label">Descriptor time</span>
+        <span class="stat-value">{{ formatMs(matchDescMs) }}</span>
+      </span>
+      <span class="stat-sep" *ngIf="matchFeatures1 || matchFeatures2"></span>
+      <span class="stat" *ngIf="matchFeatures1">
+        <span class="stat-label">KP (img 1)</span>
+        <span class="stat-value">{{ matchFeatures1.num_keypoints | number }}</span>
+      </span>
+      <span class="stat-sep" *ngIf="matchFeatures1 && matchFeatures2"></span>
+      <span class="stat" *ngIf="matchFeatures2">
+        <span class="stat-label">KP (img 2)</span>
+        <span class="stat-value">{{ matchFeatures2.num_keypoints | number }}</span>
+      </span>
+    </div>
+  </main>
+</div>

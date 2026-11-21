@@ -8,3 +8,6 @@
 /Task 3/Backend/__pycache__
 
 test_write.txt
+/Task 3/Frontend/node_modules
+/Task 3/Frontend/dist
+/Task 3/Frontend/.angular

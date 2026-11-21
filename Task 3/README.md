@@ -166,3 +166,7 @@ The SIFT service follows the exact pipeline and algorithmic structure implemente
 - **`POST /features/sift/visualize`** (alias: `POST /sift/visualize`)
   - Form parameters: same detection parameters + `circle_radius` (optional), `draw_orientation` (boolean, default true).
   - Returns rendered PNG image with keypoint circles and orientation rays, accompanied by `X-Keypoint-Count` and `X-Execution-Time-Ms` response headers.
+
+### Feature Matching Interface
+
+The Feature Matching tab displays Input 1, Input 2, and the match visualization output side by side. Input 1 can be uploaded, loaded from the latest stored image, or supplied from descriptors extracted with **Detect Keypoints** in the SIFT Keypoints tab. Input 2 is uploaded separately; SIFT descriptors are extracted for it before matching. Descriptor JSON is uploaded as file parts so larger SIFT results are not rejected by multipart text-field size limits. The existing `FeatureMatchingService` performs descriptor distance comparison, nearest/second-nearest selection, Lowe's ratio test (default threshold **0.75**), optional mutual nearest-neighbor filtering, and match visualization. Euclidean distance (SSD) is selected by default; normalized correlation remains available as an alternate metric.
