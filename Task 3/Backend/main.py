@@ -18,6 +18,12 @@ from Backend.Services.LatestImageService import (
     load_latest_image,
     load_latest_image_bytes,
 )
+from Backend.Services.FeatureMatchingService import (
+    match_feature_sets,
+    draw_matches,
+    to_rgb_uint8,
+    to_gray,
+)
 
 
 
@@ -29,6 +35,8 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    # Lets the browser read the match stats sent with the visualization PNG.
+    expose_headers=["X-Match-Count", "X-Matching-Time-Ms", "X-Descriptor-Time-Ms"],
 )
 
 
@@ -197,5 +205,126 @@ def get_latest_image():
     )
 
 
+# ----------------------------------------------------------------------------
+# Feature matching (SSD / NCC) for Harris and SIFT features
+# ----------------------------------------------------------------------------
+#
+# Multipart form fields shared by both endpoints:
+#
+#   image1     file, optional  first image (falls back to the latest uploaded image)
+#   image2     file, required  second image
+#   features1  JSON string     {"keypoints": [[x, y], ...], "descriptors": [[...], ...]}
+#   features2  JSON string     same layout, for image2
+#   method     "sift" | "harris"            (default "sift")
+#   metric     "ssd" | "ncc"                (default "ssd")
+#   ratio      float in (0, 1]              ratio test; 1 disables it (default 0.8)
+#   threshold  float, optional              max SSD (ssd) / min NCC (ncc)
+#   cross_check bool                        keep only mutual best matches (default true)
+#   patch_size odd int                      Harris-only patch descriptor size (default 11)
+#   max_matches int, optional               keep only the N best matches
+#
+# Input shapes:
+#   keypoints   (N, 2)   [x, y] in the pixel frame of the uploaded image
+#   descriptors (N, 128) for SIFT (required)
+#               (N, D)   for Harris (optional; omitted -> patch_size**2 patch pixels)
+
+def get_match_params(
+    method: str = Form("sift"),
+    metric: str = Form("ssd"),
+    ratio: float = Form(0.8, gt=0, le=1),
+    threshold: Optional[float] = Form(None),
+    cross_check: bool = Form(True),
+    patch_size: int = Form(11, ge=3, le=65),
+    max_matches: Optional[int] = Form(None, ge=1),
+) -> dict:
+    return {
+        "method": method,
+        "metric": metric,
+        "ratio": ratio,
+        "threshold": threshold,
+        "cross_check": cross_check,
+        "patch_size": patch_size,
+        "max_matches": max_matches,
+    }
 
 
+async def compute_feature_matches(
+    image1: Optional[UploadFile],
+    image2: UploadFile,
+    features1: str,
+    features2: str,
+    params: dict,
+):
+    """Load both images, parse the feature JSON and run the matcher."""
+    # Matching must not overwrite the saved "latest" image.
+    rgb1 = to_rgb_uint8(
+        await read_uploaded_image(image1, convert_to_grayscale=False, save_as_latest=False)
+    )
+    rgb2 = to_rgb_uint8(
+        await read_uploaded_image(image2, convert_to_grayscale=False, save_as_latest=False)
+    )
+
+    try:
+        feats1 = json.loads(features1)
+        feats2 = json.loads(features2)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"features1/features2 must be valid JSON: {exc}",
+        ) from exc
+
+    try:
+        result = await run_in_threadpool(
+            match_feature_sets,
+            to_gray(rgb1), feats1,
+            to_gray(rgb2), feats2,
+            **params,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return result, rgb1, rgb2
+
+
+@app.post("/features/match")
+async def match_features(
+    image1: Optional[UploadFile] = File(None),
+    image2: UploadFile = File(...),
+    features1: str = Form(...),
+    features2: str = Form(...),
+    params: dict = Depends(get_match_params),
+):
+    """Match Harris or SIFT features between two images with SSD or NCC.
+
+    Returns the matches (indices + coordinates + score) and the computation times.
+    """
+    result, _, _ = await compute_feature_matches(image1, image2, features1, features2, params)
+    return result
+
+
+@app.post("/features/match/visualize")
+async def visualize_feature_matches(
+    image1: Optional[UploadFile] = File(None),
+    image2: UploadFile = File(...),
+    features1: str = Form(...),
+    features2: str = Form(...),
+    circle_radius: int = Form(8, ge=1, le=100),
+    draw_lines: bool = Form(True),
+    params: dict = Depends(get_match_params),
+):
+    """Same matching as /features/match, returned as a side-by-side PNG with a
+    circle on every matched point (same colour in both images) and, optionally,
+    a line joining each pair. Stats are in the X-Match-Count, X-Matching-Time-Ms
+    and X-Descriptor-Time-Ms response headers."""
+    result, rgb1, rgb2 = await compute_feature_matches(
+        image1, image2, features1, features2, params
+    )
+    canvas = await run_in_threadpool(
+        draw_matches, rgb1, rgb2, result["matches"], circle_radius, draw_lines
+    )
+
+    response = process_image(canvas)
+    response.headers["X-Match-Count"] = str(result["num_matches"])
+    response.headers["X-Matching-Time-Ms"] = str(result["matching_time_ms"])
+    response.headers["X-Descriptor-Time-Ms"] = str(result["descriptor_time_ms"])
+    return response
