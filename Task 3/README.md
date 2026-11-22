@@ -1,172 +1,273 @@
-# Image Processing & Shape Detection
+# Computer Vision Task 3: Feature Detection and Matching
 
-An interactive computer vision application for experimenting with **edge detection, geometric shape detection, and contour-based image segmentation**. The project combines an **Angular frontend** for uploading images, adjusting algorithm parameters, and inspecting results with a **Python FastAPI backend** that performs the image-processing operations.
-
-The application covers Canny edge detection, Hough transforms for lines, circles, and ellipses, greedy active contours (snakes), and Freeman 8-direction chain codes.
+An interactive feature-engineering application for detecting image features and matching them across different views. The Angular frontend provides keypoint extraction, descriptor selection, and match visualization, while the Python FastAPI backend implements the computer vision algorithms.
 
 ## Features
 
-| Feature | What it does |
+| Feature | Implementation |
 | --- | --- |
-| **Canny Edge Detection** | Produces an edge map with configurable Gaussian smoothing, low/high thresholds, and edge propagation. |
-| **Hough Line Transform** | Finds straight lines and reports their polar coordinates (`rho`, `theta`); can draw detected lines over the source image. |
-| **Hough Circle Transform** | Detects circles across a configurable radius range and reports center coordinates, radius, and vote count. |
-| **Hough Ellipse Transform** | Detects ellipses and reports their center, semi-axes, rotation, and supporting votes. |
-| **Active Contour (Snake)** | Refines a user-defined initial contour toward object boundaries with a multi-scale greedy snake algorithm. |
-| **Freeman Chain Code** | Encodes contour boundaries as 8-direction steps; active-contour iteration output also includes final area and perimeter. |
-| **Image Reuse** | Saves the most recently uploaded image as a lossless PNG so different algorithms can run without re-uploading it. |
+| Harris corner detection | Sobel gradients, a 2D structure tensor, and the Harris corner response |
+| Lambda-minus corner detection | The smaller eigenvalue of the same structure tensor |
+| MOPS descriptors | Aligned, normalized 8 x 8 intensity patches (`64D`) |
+| SIFT descriptors | Orientation assignment and a 4 x 4 x 8 gradient histogram (`128D`) |
+| Full SIFT detection | Gaussian scale-space, Difference of Gaussians, keypoint localization, orientation, and descriptor extraction |
+| Feature matching | SSD or NCC, Lowe-style ratio test, cross-checking, and optional score threshold |
 
-## Screenshots
+## Visual Results
 
-The screenshots show the interface and example image-processing results for the different algorithms.
+### Harris Keypoint Detection
 
-| Active Contour - Example 1 | Active Contour - Example 2 |
-| :---: | :---: |
-| ![Active contour example 1](Screenshots/ActiveCountour1.png) | ![Active contour example 2](Screenshots/ActiveCountour2.png) |
+Harris corners are shown as circular markers over the input image. Strong local maxima of the Harris response are retained after nonmaximum suppression.
 
-| Canny Edge Detection | Hough Line Detection |
-| :---: | :---: |
-| ![Canny edge detection](Screenshots/CannyEdgeDetection.png) | ![Hough lines](Screenshots/Hough%20Lines.png) |
+![Harris keypoint detection](Images/Harris%20Key%20detection.jpeg)
 
-| Hough Circle Detection | Hough Ellipse Detection |
-| :---: | :---: |
-| ![Hough circles](Screenshots/HoughCircles.png) | ![Hough ellipses](Screenshots/Hough%20Ellipses.png) |
+### Harris and MOPS Feature Matching
 
-> **Screenshot setup:** Create a `screenshots/` directory at the repository root and copy the six original PNG screenshots into it. The paths above preserve the filenames shown in the supplied folder screenshot, including `ActiveCountour` and the spaces in the Hough filenames. If you store the screenshots elsewhere, update these relative paths.
+The two images are displayed side by side. Each retained correspondence is marked in the same color on both images, with an optional connecting line.
+
+![Harris feature matching with MOPS](Images/Harris%20feature%20matching%20with%20mops.jpeg)
+
+### SIFT Keypoint Detection
+
+Full SIFT keypoints are visualized with scale circles and dominant orientation rays. The descriptor calculation produces a `128D` unit vector for each detected orientation.
+
+![SIFT keypoint detection](Images/SIFT%20Key%20detection.jpeg)
+
+### SIFT Feature Matching
+
+Matched SIFT descriptors are shown across both input views. Matching can use SSD or NCC and can be refined with a ratio test and mutual nearest-neighbor cross-check.
+
+![SIFT feature matching](Images/SIFT%20feature%20matching.jpeg)
+
+### Brightness Robustness Test
+
+This test compares feature detection and matching after a brightness change. It demonstrates whether the method remains stable under additive intensity variation.
+
+![Brightness robustness test](Images/Brightness_test.png)
+
+### Rotation Robustness Test
+
+This test examines keypoint and descriptor behavior after rotation. Oriented descriptors should remain consistent while the feature locations rotate with the image.
+
+![Rotation robustness test](Images/Rotation_test.png)
+
+## Harris and Lambda-minus Corner Detection
+
+Both corner detectors use the same first-order gradients and structure tensor.
+
+### 1. Grayscale Preparation
+
+- Convert the source image to grayscale.
+- Normalize floating-point input to the range `[0, 1]`.
+
+### 2. Sobel Gradients
+
+The horizontal and vertical Sobel kernels are convolved with the image to obtain `gx` and `gy`.
+
+The three structure-tensor terms are then computed:
+
+- `sxx = Gaussian(gx * gx)`
+- `syy = Gaussian(gy * gy)`
+- `sxy = Gaussian(gx * gy)`
+
+A `5 x 5` Gaussian kernel with sigma `1.4` smooths these terms.
+
+### 3. Corner Response
+
+**Harris response**
+
+```text
+R = sxx * syy - sxy^2 - k * (sxx + syy)^2
+```
+
+The implementation uses `k = 0.04`.
+
+**Lambda-minus response**
+
+```text
+lambda_minus = 0.5 * (sxx + syy - sqrt((sxx - syy)^2 + 4 * sxy^2))
+```
+
+Lambda-minus is the smaller eigenvalue of the structure tensor and is a Shi-Tomasi-style corner measure.
+
+### 4. Keypoint Extraction
+
+1. Normalize the threshold relative to the maximum response.
+2. Apply a user-defined odd-sized maximum filter for nonmaximum suppression.
+3. Remove points near the image border.
+4. Sort the remaining points from strongest to weakest.
+5. Optionally limit the number of returned keypoints.
+
+## MOPS Descriptor
+
+MOPS (Multi-Scale Oriented Patches) descriptors are used for aligned corner patches.
+
+1. Smooth the grayscale image.
+2. Estimate a local orientation from the Sobel gradient at the keypoint.
+3. Rotate the patch so its orientation becomes canonical.
+4. Scale and warp a `40 x 40` neighborhood to an `8 x 8` patch.
+5. Zero the patch mean and divide by its standard deviation.
+6. Flatten the result into a `64D` descriptor.
+
+Constant patches with negligible variance are discarded because they cannot provide meaningful normalized information.
+
+## Full SIFT Pipeline
+
+The SIFT implementation follows the standard scale-space-to-descriptor pipeline.
+
+### 1. Scale-Space Generation
+
+- Build multiple octaves from the input image.
+- Blur each octave with a sequence of Gaussian filters.
+- The default base sigma is `1.6`.
+- Incremental blurring creates consecutive scale levels.
+- Subsequent octaves are produced by downsampling the appropriate Gaussian level.
+
+### 2. Difference of Gaussians
+
+Each Difference-of-Gaussians image is:
+
+```text
+DoG(s) = Gaussian(s + 1) - Gaussian(s)
+```
+
+The DoG pyramid emphasizes blobs and corners that appear consistently at a scale.
+
+### 3. Local Extrema Detection
+
+Candidate keypoints are pixels that are:
+
+- Strictly larger than or smaller than all 26 neighbors in a `3 x 3 x 3` scale neighborhood.
+- Not placed on the DoG image border.
+
+### 4. Keypoint Localization and Filtering
+
+For each candidate, the implementation:
+
+- Fits a quadratic Taylor approximation to localize the point in image and scale.
+- Rejects low-contrast extrema.
+- Rejects edge responses using the principal-curvature ratio test.
+- Removes unstable points outside the valid image region.
+
+The default contrast threshold is `0.03`, and the default principal-curvature threshold is `10.0`.
+
+### 5. Dominant Orientation Assignment
+
+For each accepted keypoint:
+
+1. Calculate gradient magnitude and direction in `[0, 360)` degrees.
+2. Weight gradients with a Gaussian window whose sigma is `1.5 * keypoint sigma`.
+3. Fill a `36`-bin orientation histogram.
+4. Smooth the histogram.
+5. Select local peaks.
+6. Use parabolic interpolation to refine peak positions.
+7. Accept weaker peaks above `80%` of the dominant peak as additional orientations.
+
+The angular difference helper handles the `0/360` degree wrap-around.
+
+### 6. SIFT Descriptor Calculation
+
+Each oriented keypoint is described through these stages:
+
+1. Extract a local neighborhood at the keypoint scale.
+2. Rotate the neighborhood to make the dominant orientation canonical.
+3. Normalize local gradient angles relative to that orientation.
+4. Apply Gaussian weighting that reduces the influence of pixels away from the center.
+5. Divide the neighborhood into a `4 x 4` spatial grid.
+6. Build eight orientation bins for every spatial cell.
+7. Use trilinear interpolation across row, column, and orientation dimensions.
+8. Flatten the grid into `128` values.
+9. L2-normalize the descriptor.
+10. Clamp values above `0.2`, then normalize again.
+
+## Feature Matching
+
+The matcher compares every descriptor from the first image with every descriptor from the second image.
+
+### Matching Metrics
+
+**Sum of Squared Differences (SSD)**
+
+```text
+SSD(a, b) = sum((a - b)^2)
+```
+
+Lower SSD indicates greater similarity.
+
+**Normalized Cross-Correlation (NCC)**
+
+Each descriptor is zero-centered before correlation. Higher NCC indicates greater similarity.
+
+### Match Filters
+
+- **Lowe ratio test:** The best distance must be below `ratio * second_best_distance`. The default ratio is `0.75`.
+- **Mutual cross-check:** The first image's best match must also be the second image's best match.
+- **Optional threshold:** Accept only SSD values at or below the threshold, or NCC values at or above the threshold.
+- **Maximum match count:** Optionally return only the strongest matches.
+
+The result includes original keypoint indices, coordinates, raw score, match count, descriptor time, and matching time.
+
+## API
+
+### Corner detection
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /corners` | Detect Harris or lambda-minus corners and return MOPS or SIFT descriptors |
+| `POST /corners/overlay` | Return an RGB PNG with circles drawn around corners |
+
+Useful corner parameters include `method`, `descriptor_method`, `threshold`, `window_size`, `margin`, and `max_keypoints`.
+
+### SIFT
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /features/sift` | Return SIFT keypoints and `128D` descriptors |
+| `POST /features/sift/visualize` | Return a PNG with scale circles and orientation rays |
+
+Common SIFT parameters include `contrast_threshold`, `edge_threshold`, `num_octaves`, `num_intervals`, `sigma`, `peak_ratio`, and `descriptor_threshold`.
+
+### Matching
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /features/match` | Match uploaded feature sets and return JSON |
+| `POST /features/match/visualize` | Return a side-by-side matching visualization |
+
+## Running the Application
+
+### Backend
+
+From the Task 3 directory:
+
+```powershell
+cd Backend
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
+
+The API will be available at `http://127.0.0.1:8000`.
+
+### Frontend
+
+From the Task 3 directory:
+
+```powershell
+cd Frontend
+npm install
+npm start
+```
+
+Open `http://127.0.0.1:4200`.
 
 ## Technology Stack
 
-| Layer | Technology | Purpose |
-| --- | --- | --- |
-| Frontend | Angular, TypeScript | Image upload, algorithm configuration, and result visualization |
-| Backend | Python, FastAPI | HTTP endpoints, validation, image processing, and streamed responses |
-| Image processing | OpenCV, NumPy | Image decoding, grayscale conversion, numerical operations, and PNG encoding |
-| Optional acceleration | Numba | Faster Hough ellipse detection on suitable inputs |
+| Layer | Technology |
+| --- | --- |
+| Frontend | Angular 19, TypeScript |
+| Backend | Python, FastAPI |
+| Feature processing | OpenCV, NumPy, SciPy-based utilities |
+| Visualization | OpenCV PNG rendering and Angular canvases |
 
-## How It Works
+## Source Images
 
-1. **Upload an image** using the interface or `POST /images/upload`. The backend validates the file and retains the latest image as a PNG.
-2. **Select an algorithm** and configure its parameters. Canny produces an edge map; Hough algorithms can optionally run Canny before shape detection.
-3. **Run the operation.** The API returns a PNG image, a JSON representation of detected shapes/contours, or a stream of contour iterations, depending on the endpoint.
-4. **Inspect the result** in the frontend, or consume the returned data programmatically.
-
-For Hough transforms, the backend can overlay detected shapes on the original image. For active contours, the overlay endpoint draws the **initial contour in blue** and the **final contour in red**.
-
-### Important Parameters
-
-**Canny (`/canny`)**
-
-| Form field | Default | Description |
-| --- | --- | --- |
-| `sigma` | `1.4` | Gaussian smoothing strength |
-| `low_threshold` | `20` | Lower hysteresis threshold |
-| `high_threshold` | `50` | Upper hysteresis threshold |
-| `kernel_size` | Derived from `sigma` | Optional odd Gaussian kernel size, from 3 to 51 |
-| `propagate` | `true` | Extend weak edges through connected chains |
-| `manual` | `false` | Use the manual convolution implementation |
-
-**Hough transforms (shared preprocessing)**
-
-| Form field | Default | Description |
-| --- | --- | --- |
-| `apply_canny` | `true` | Run Canny before Hough detection; set to `false` for an existing edge map |
-| `sigma` | `1.4` | Canny Gaussian smoothing strength |
-| `low_threshold` | `20` | Canny lower threshold |
-| `high_threshold` | `50` | Canny upper threshold |
-
-Additional detection options:
-
-| Algorithm | Key options | Default values |
-| --- | --- | --- |
-| Lines | `threshold`, `use_vectorized`, `use_nms`, `rho_distance`, `theta_distance` | `100`, `true`, `true`, `10`, `5` |
-| Circles | `threshold`, `min_radius`, `max_radius`, `radius_step`, `max_circles` | `100`, `10`, `70`, `1`, `2` |
-| Circles | `radii`, `min_center_distance`, `radius_distance`, `batch_size` | optional radius list, `80`, `5`, `1024` |
-| Ellipses | `threshold`, `pair_tolerance`, `center_tolerance`, `max_ellipses` | `100`, `2`, `4`, `2` |
-| Ellipses | `use_vectorized`, `max_edge_points` | `true`, `400` |
-
-The circle detector accepts `radii` as comma-separated values (for example, `20,25,30`) instead of the min/max/step range. It limits a request to 256 different radius values. Hough vote thresholds must be **strictly exceeded** for a detection to be accepted.
-
-**Active contour**
-
-The contour endpoints (except `/active-contour/edge-map`) require a `contour` form field containing JSON coordinates such as `[[40,40],[200,40],[200,200],[40,200]]`, using image pixel coordinates.
-
-| Form field | Default | Description |
-| --- | --- | --- |
-| `contour` | Required | Initial contour as `[x, y]` points |
-| `num_points` | `200` | Number of sampled points on the snake |
-| `alpha` | `1.0` | Continuity weight |
-| `beta` | `1.0` | Smoothness weight |
-| `gamma` | `2.0` | Image attraction weight |
-| `scales` | `12,6,3` | Coarse-to-fine attraction scales |
-| `max_iterations` | `200` | Maximum iterations per stage |
-| `radius` | `2` | Local search radius in pixels |
-| `convergence_threshold` | `0.02` | Convergence threshold |
-| `use_corners` | `false` | Enable corner-related behavior |
-
-## Implementation Notes and Limits
-
-- **Upload limits:** The backend rejects files larger than **25 MiB** or images containing more than **16 million pixels**.
-- **Latest image:** A new file is stored as a PNG before processing. Requests without a file reuse that saved image, which survives API restarts. The supplied API has one shared latest-image slot, not separate images per user.
-- **Save behavior:** Most image-processing requests support `save_as_latest` (default `true`) when a new file is attached.
-- **Overlay output:** All rendered output images are encoded and returned as PNG.
-- **Ellipse performance:** The three-point ellipse search is computationally expensive. The default `max_edge_points` is `400`. Without Numba acceleration, inputs with more than `120` edge pixels are rejected; consider a smaller or sparser image.
-- **CORS:** The provided backend allows all origins, methods, and headers. Restrict these settings before deploying to an environment where cross-origin access needs to be controlled.
-- **Validation:** Invalid images and algorithm parameters can produce `400` responses, oversized images produce `413`, and FastAPI also validates form-field ranges.
-
-
-## SIFT Feature Extraction & Matching (Task 3)
-
-### SIFT Service Architecture (`Backend/Services/SIFTService.py`)
-
-The SIFT service follows the exact pipeline and algorithmic structure implemented in `SIFT_(1).ipynb`:
-
-1. **Keypoint Detection:**
-   - `Generate_Scale_Space(image, num_octaves=3, num_intervals=3, sigma=1.6, assumed_blur=0.5)`: Generates octave pyramid with incremental Gaussian blurring.
-   - `Calculate_DoG(scale_space)`: Differences of adjacent Gaussian blurred levels across each octave.
-   - `Detect_Local_Extrema(dog_space)`: Vectorized 3D local extrema detection across 26 spatial/scale neighbors.
-   - `Localize_And_Filter_Keypoints(dog_space, candidates, contrast_threshold=0.03, edge_threshold=10)`: Subpixel quadratic Taylor expansion, low-contrast removal, and principal curvature ratio edge elimination.
-   - `Detect_Keypoints(image, return_scale_space=False, ...)`: Complete detection pipeline returning localized keypoints and optional scale space.
-
-2. **Orientation Assignment:**
-   - `Calculate_Gradients(gaussian_image)`: Computes gradient magnitude and orientation in `[0, 360)` degrees.
-   - `Apply_Gaussian_Weighting(magnitude, orientation, x, y, sigma)`: Applies `1.5 * sigma` Gaussian window weighting to local gradients.
-   - `Build_Orientation_Histogram(weighted_magnitude, orientation, num_bins=36)`: Accumulates 36-bin histogram of weighted orientations.
-   - `Assign_Dominant_Orientation(histogram, num_bins=36, peak_ratio=0.8)`: 5-tap binomial smoothing, peak detection, and sub-bin parabolic interpolation.
-   - `Assign_Orientation_To_Keypoint(kp, scale_space, num_intervals=3)`: Identifies dominant canonical orientations for each keypoint.
-
-3. **Descriptor Neighborhood Preparation:**
-   - `Extract_Local_Neighborhood(gaussian_image, keypoint)`: Extracts local window in octave scale (`8 * sigma`).
-   - `Rotate_Neighborhood(neighborhood, keypoint_orientation)`: Rotates patch around center to keypoint orientation via bilinear affine warp.
-   - `Normalize_Orientation(local_orientations, keypoint_orientation)`: Normalizes local gradient angles relative to canonical keypoint orientation.
-   - `Apply_Descriptor_Gaussian_Weighting(gradient_magnitude, neighborhood_sigma=None)`: Center-weighted Gaussian decay on descriptor patch.
-
-4. **Descriptor Histogram & Trilinear Interpolation:**
-   - `Divide_Into_Cells(neighborhood, num_cells=4)`: Splits neighborhood patch into 4x4 spatial cells.
-   - `Calculate_Local_Gradients(neighborhood)`: Computes local patch gradients.
-   - `Build_Local_Orientation_Histograms(cells, ...)`: Cell-wise histograms.
-   - `Apply_Trilinear_Interpolation(gradient_magnitude, gradient_orientation, num_cells=4, num_bins=8)`: Distributes samples across spatial (row, col) and angular bins.
-   - `Concatenate_Histograms(histograms)`: Flattens 4x4x8 3D tensor into a 128-D descriptor vector.
-
-5. **Descriptor Normalization:**
-   - `Normalize_Descriptor(descriptor)`: L2 unit normalization.
-   - `Threshold_And_Renormalize(descriptor, threshold=0.2)`: Clamps large gradient spikes to 0.2 and re-normalizes to unit length.
-
-6. **End-to-End Pipeline & Visualization:**
-   - `compute_descriptor(kp, scale_space, theta)`: Produces normalized 128-D descriptor for an oriented keypoint.
-   - `extract_sift_features(image, ...)`: High-level entry point returning `{ keypoints, descriptors, keypoint_details, num_keypoints, execution_time_ms }`.
-   - `draw_sift_keypoints(image, keypoints, circle_radius, draw_orientation)`: Visualizes detected keypoints with scale circles and canonical orientation rays.
-   - `circ_diff(a, b)`: Angular difference accounting for 0/360 wrap-around.
-
-### SIFT Endpoints
-
-- **`POST /features/sift`** (aliases: `POST /sift`, `POST /sift/detect`)
-  - Form parameters: `file` (optional, falls back to latest image), `max_keypoints` (default 500), `contrast_threshold` (0.03), `edge_threshold` (10.0), `num_octaves` (3), `num_intervals` (3), `sigma` (1.6), `assumed_blur` (0.5), `save_as_latest` (false).
-  - Returns JSON with `keypoints` (`(N, 2)` format) and `descriptors` (`(N, 128)` format), directly compatible with `POST /features/match`.
-
-- **`POST /features/sift/visualize`** (alias: `POST /sift/visualize`)
-  - Form parameters: same detection parameters + `circle_radius` (optional), `draw_orientation` (boolean, default true).
-  - Returns rendered PNG image with keypoint circles and orientation rays, accompanied by `X-Keypoint-Count` and `X-Execution-Time-Ms` response headers.
-
-### Feature Matching Interface
-
-The Feature Matching tab displays Input 1, Input 2, and the match visualization output side by side. Input 1 can be uploaded, loaded from the latest stored image, or supplied from descriptors extracted with **Detect Keypoints** in the SIFT Keypoints tab. Input 2 is uploaded separately; SIFT descriptors are extracted for it before matching. Descriptor JSON is uploaded as file parts so larger SIFT results are not rejected by multipart text-field size limits. The existing `FeatureMatchingService` performs descriptor distance comparison, nearest/second-nearest selection, Lowe's ratio test (default threshold **0.75**), optional mutual nearest-neighbor filtering, and match visualization. Euclidean distance (SSD) is selected by default; normalized correlation remains available as an alternate metric.
+Additional test inputs are stored in `Sample Images/`. Generated visual demonstrations are stored in `Images/`.
