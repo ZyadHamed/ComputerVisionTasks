@@ -1,11 +1,3 @@
-import sys
-from pathlib import Path
-
-# Ensure the Task 3 directory is on sys.path so 'Backend' package is always resolvable
-_project_root = str(Path(__file__).resolve().parents[1])
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
-
 import json
 from io import BytesIO
 from typing import Optional
@@ -91,10 +83,6 @@ def process_image(image: np.ndarray) -> StreamingResponse:
         media_type="image/png"
     )
 
-# Keep upload sizes manageable. Adjust these for your project's expected images.
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024
-MAX_IMAGE_PIXELS = 16_000_000
-
 
 async def read_uploaded_image(
     file: Optional[UploadFile] = None,
@@ -123,13 +111,8 @@ async def read_uploaded_image(
                 detail=f"Could not load the stored image: {exc}",
             ) from exc
     else:
-        # Read one byte beyond the limit to reject oversized uploads.
-        contents = await file.read(MAX_UPLOAD_BYTES + 1)
-        if len(contents) > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail="Uploaded image exceeds the 25 MiB limit.",
-            )
+        # Read the complete upload; the application imposes no byte-size cap.
+        contents = await file.read()
         if not contents:
             raise HTTPException(status_code=400, detail="Uploaded image is empty.")
 
@@ -153,12 +136,6 @@ async def read_uploaded_image(
         raise HTTPException(
             status_code=400,
             detail="Unsupported image channel count.",
-        )
-
-    if image.shape[0] * image.shape[1] > MAX_IMAGE_PIXELS:
-        raise HTTPException(
-            status_code=413,
-            detail="Image exceeds the 16-megapixel limit.",
         )
 
     # Only a newly supplied image changes the saved file. The original
@@ -233,8 +210,8 @@ def get_latest_image():
 #
 #   image1     file, optional  first image (falls back to the latest uploaded image)
 #   image2     file, required  second image
-#   features1  JSON file       {"keypoints": [[x, y], ...], "descriptors": [[...], ...]}
-#   features2  JSON file       same layout, for image2
+#   features1  JSON file part     {"keypoints": [[x, y], ...], "descriptors": [[...], ...]}
+#   features2  JSON file part     same layout, for image2
 #   method     "sift" | "harris"            (default "sift")
 #   metric     "ssd" | "ncc"                (default "ssd")
 #   ratio      float in (0, 1]              ratio test; 1 disables it (default 0.8)
@@ -284,23 +261,16 @@ async def compute_feature_matches(
         await read_uploaded_image(image2, convert_to_grayscale=False, save_as_latest=False)
     )
 
-    async def read_feature_file(upload: UploadFile, name: str):
-        contents = await upload.read(MAX_UPLOAD_BYTES + 1)
-        if len(contents) > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"{name} exceeds the 25 MiB limit.",
-            )
-        try:
-            return json.loads(contents.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise HTTPException(
-                status_code=400,
-                detail=f"{name} must be a valid UTF-8 JSON file: {exc}",
-            ) from exc
-
-    feats1 = await read_feature_file(features1, "features1")
-    feats2 = await read_feature_file(features2, "features2")
+    try:
+        # Each JSON payload is a multipart FILE, not a text field. This avoids
+        # Starlette's 1 MiB per-text-field limit for many descriptors.
+        feats1 = json.loads(await features1.read())
+        feats2 = json.loads(await features2.read())
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"features1/features2 must contain valid JSON: {exc}",
+        ) from exc
 
     try:
         result = await run_in_threadpool(
@@ -365,7 +335,7 @@ async def visualize_feature_matches(
 #
 # Multipart form fields for SIFT endpoints:
 #   file                 file, optional    image to process (defaults to latest uploaded image)
-#   max_keypoints        int, optional     maximum keypoints to retain by magnitude of response (default 500)
+#   max_keypoints        int, optional     optional cap (omitted = unlimited)
 #   contrast_threshold   float             subpixel contrast threshold (default 0.03)
 #   edge_threshold       float             ratio of principal curvatures threshold (default 10.0)
 #   num_octaves          int               number of octaves in scale space (default 3)
@@ -381,7 +351,7 @@ async def visualize_feature_matches(
 #   draw_orientation     bool              whether to draw canonical orientation vector (default true)
 
 def get_sift_params(
-    max_keypoints: Optional[int] = Form(500, ge=1),
+    max_keypoints: Optional[int] = Form(None, ge=1),
     contrast_threshold: float = Form(0.03, gt=0),
     edge_threshold: float = Form(10.0, gt=0),
     num_octaves: int = Form(3, ge=1, le=8),
@@ -473,10 +443,11 @@ async def corner_features(
     threshold: float = Form(0.01, ge=0, le=1),
     window_size: int = Form(5, ge=1, le=31),
     margin: Optional[int] = Form(None, ge=0),
-    max_keypoints: int = Form(500, ge=1, le=4000),
+    max_keypoints: Optional[int] = Form(None, ge=1),
+    save_as_latest: bool = Form(False),
 ):
     """Return match-ready keypoints and SIFT/MOPS descriptors (JSON)."""
-    image = await read_uploaded_image(file, convert_to_grayscale=False)
+    image = await read_uploaded_image(file, convert_to_grayscale=False, save_as_latest=save_as_latest)
     try:
         return await run_in_threadpool(
             ExtractCornerFeatures, image, method, descriptor_method,
@@ -493,11 +464,12 @@ async def corner_overlay(
     threshold: float = Form(0.01, ge=0, le=1),
     window_size: int = Form(5, ge=1, le=31),
     margin: int = Form(10, ge=0),
-    max_keypoints: int = Form(500, ge=1, le=4000),
+    max_keypoints: Optional[int] = Form(None, ge=1),
     circle_radius: int = Form(5, ge=1, le=100),
+    save_as_latest: bool = Form(False),
 ):
     """Return PNG with red circles around detected Harris/Lambda Minus corners."""
-    image = await read_uploaded_image(file, convert_to_grayscale=False)
+    image = await read_uploaded_image(file, convert_to_grayscale=False, save_as_latest=save_as_latest)
     try:
         _, points = await run_in_threadpool(
             DetectCorners, image, method, threshold, window_size, margin, max_keypoints

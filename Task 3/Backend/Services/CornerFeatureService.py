@@ -28,7 +28,6 @@ from Backend.Services.SIFTService import (
 
 CORNER_METHODS = ("harris", "lamda_minus")  # 'lamda_minus' preserves requested API spelling
 DESCRIPTOR_METHODS = ("sift", "mops")
-MAX_FEATURES = 4000  # Limit in existing FeatureMatchingService
 
 SOBEL_X = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=np.float64)
 SOBEL_Y = np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=np.float64)
@@ -71,7 +70,7 @@ def ApplyHarrisOperator(gray: np.ndarray, method: str = "harris") -> np.ndarray:
 
 def GetHarrisKeypoints(
     R: np.ndarray, threshold: float = 0.01, window_size: int = 5,
-    margin: int = 10, max_keypoints: Optional[int] = 500,
+    margin: int = 10, max_keypoints: Optional[int] = None,
 ) -> np.ndarray:
     """Relative threshold + nonmaximum suppression; return (N,2) [x,y]."""
     if not 0 <= threshold <= 1:
@@ -80,8 +79,8 @@ def GetHarrisKeypoints(
         raise ValueError("window_size must be a positive odd number")
     if margin < 0:
         raise ValueError("margin cannot be negative")
-    if max_keypoints is not None and not 1 <= max_keypoints <= MAX_FEATURES:
-        raise ValueError(f"max_keypoints must be between 1 and {MAX_FEATURES}")
+    if max_keypoints is not None and max_keypoints < 1:
+        raise ValueError("max_keypoints must be positive when provided")
 
     if R.size == 0 or not np.isfinite(R).all() or R.max() <= 0:
         return np.empty((0, 2), dtype=int)
@@ -106,7 +105,7 @@ def GetHarrisKeypoints(
 def DetectCorners(
     image: np.ndarray, method: str = "harris", threshold: float = 0.01,
     window_size: int = 5, margin: int = 10,
-    max_keypoints: Optional[int] = 500,
+    max_keypoints: Optional[int] = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return (response matrix, detected keypoints); no descriptors computed."""
     gray = _gray(image)
@@ -175,10 +174,6 @@ def ExtractSIFTDescriptorsFromHarris(
                 points.append([float(x), float(y)])
                 descriptors.append(descriptor)
                 angles.append(float(theta))
-                if len(points) >= MAX_FEATURES:
-                    break
-        if len(points) >= MAX_FEATURES:
-            break
 
     return (np.asarray(points, dtype=float).reshape(-1, 2),
             np.asarray(descriptors, dtype=float).reshape(-1, 128), angles)
@@ -187,7 +182,7 @@ def ExtractSIFTDescriptorsFromHarris(
 def ExtractCornerFeatures(
     image: np.ndarray, method: str = "harris", descriptor_method: str = "mops",
     threshold: float = 0.01, window_size: int = 5,
-    margin: Optional[int] = None, max_keypoints: Optional[int] = 500,
+    margin: Optional[int] = None, max_keypoints: Optional[int] = None,
 ) -> dict:
     """Return match-ready [x,y] keypoints + SIFT-128 or MOPS-64 descriptors."""
     if descriptor_method not in DESCRIPTOR_METHODS:

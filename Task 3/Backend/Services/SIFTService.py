@@ -39,10 +39,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import cv2
 import numpy as np
 
-try:
-    from Backend.Services.UtilitiesService import TransformIntoGrayScale
-except ModuleNotFoundError:
-    from Services.UtilitiesService import TransformIntoGrayScale
+from Backend.Services.UtilitiesService import TransformIntoGrayScale
 
 
 # Helper / Image preprocessing
@@ -774,7 +771,7 @@ def compute_descriptor(
 
 def extract_sift_features(
     image: np.ndarray,
-    max_keypoints: Optional[int] = 500,
+    max_keypoints: Optional[int] = None,
     contrast_threshold: float = 0.03,
     edge_threshold: float = 10.0,
     num_octaves: int = 3,
