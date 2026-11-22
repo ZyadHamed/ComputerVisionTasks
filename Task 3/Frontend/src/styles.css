@@ -7,21 +7,11 @@
   --blue: #4166e5;
   --blue-light: #edf1ff;
   --teal: #0d99a6;
-  --green: #1aab6e;
-  --amber: #d97706;
-  --red: #e03535;
   --bg: #f5f7fc;
   --card: #fff;
-  --sidebar-w: 300px;
+  --sidebar-w: 294px;
 }
-html, body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100%;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: var(--ink);
-  background: var(--bg);
-}
-button, input, select, textarea { font: inherit; }
+html, body { margin: 0; min-width: 320px; min-height: 100%; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: var(--ink); background: var(--bg); }
+button, input, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .45; }

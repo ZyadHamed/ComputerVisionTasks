@@ -1,0 +1,403 @@
+<div class="feature-shell">
+  <aside class="feature-sidebar">
+    <header class="feature-sidebar-heading">
+      <div class="feature-side-icon">⌗</div>
+      <div>
+        <span class="feature-side-eyebrow">FEATURE ENGINEERING</span>
+        <h2>Matching lab</h2>
+      </div>
+    </header>
+
+    <section class="feature-sidebar-section">
+      <div class="section-heading"><span>01</span> Detection strategy</div>
+      <div class="mode-pills" role="group" aria-label="Feature detection mode">
+        @for (mode of featureMethods; track mode.value) {
+          <button type="button" [class.active]="featureMode === mode.value" [disabled]="isBusy"
+            (click)="featureMode = mode.value; onFeaturesChanged()">
+            <strong>{{ mode.label }}</strong>
+            <small>{{ mode.description }}</small>
+          </button>
+        }
+      </div>
+
+      @if (featureMode === 'corners') {
+        <div class="mini-section-label">Corner response</div>
+        <div class="selector-grid">
+          <button type="button" [class.active]="cornerMethod === 'harris'" [disabled]="isBusy"
+            (click)="cornerMethod = 'harris'; onFeaturesChanged()">Harris</button>
+          <button type="button" [class.active]="cornerMethod === 'lamda_minus'" [disabled]="isBusy"
+            (click)="cornerMethod = 'lamda_minus'; onFeaturesChanged()">λ-minus</button>
+        </div>
+        <div class="mini-section-label">Descriptor type</div>
+        <div class="selector-grid">
+          <button type="button" [class.active]="descriptorMethod === 'mops'" [disabled]="isBusy"
+            (click)="descriptorMethod = 'mops'; onFeaturesChanged()">MOPS <small>64D</small></button>
+          <button type="button" [class.active]="descriptorMethod === 'sift'" [disabled]="isBusy"
+            (click)="descriptorMethod = 'sift'; onFeaturesChanged()">SIFT <small>128D</small></button>
+        </div>
+        <div class="control-grid">
+          <div class="control-field">
+            <label for="f-threshold">Response threshold</label>
+            <input id="f-threshold" type="number" [(ngModel)]="cornerThreshold" min="0" max="1" step="0.005"
+              (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy">
+          </div>
+          <div class="control-field">
+            <label for="f-window">NMS window (odd)</label>
+            <input id="f-window" type="number" [(ngModel)]="windowSize" min="1" max="31" step="2"
+              (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy">
+          </div>
+        </div>
+        <div class="control-field">
+          <label for="f-margin">Border margin <span>blank = auto</span></label>
+          <input id="f-margin" type="number" [(ngModel)]="cornerMargin" min="0" placeholder="Auto"
+            (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy">
+        </div>
+        <div class="method-note">Harris and λ-minus share the same Sobel gradients and structure tensor. Only the response changes.</div>
+      } @else {
+        <div class="mini-section-label">Scale-space detection</div>
+        <div class="control-grid">
+          <div class="control-field"><label for="sift-contrast">Contrast threshold</label>
+            <input id="sift-contrast" type="number" [(ngModel)]="siftContrast" min="0.0001" step="0.01"
+              (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy"></div>
+          <div class="control-field"><label for="sift-edge">Edge threshold</label>
+            <input id="sift-edge" type="number" [(ngModel)]="siftEdge" min="0.01" step="1"
+              (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy"></div>
+          <div class="control-field"><label for="sift-octaves">Octaves</label>
+            <input id="sift-octaves" type="number" [(ngModel)]="siftOctaves" min="1" max="8"
+              (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy"></div>
+          <div class="control-field"><label for="sift-intervals">Intervals / octave</label>
+            <input id="sift-intervals" type="number" [(ngModel)]="siftIntervals" min="1" max="10"
+              (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy"></div>
+          <div class="control-field"><label for="sift-sigma">Base sigma</label>
+            <input id="sift-sigma" type="number" [(ngModel)]="siftSigma" min="0.1" step="0.1"
+              (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy"></div>
+          <div class="control-field"><label for="sift-assumed">Assumed blur</label>
+            <input id="sift-assumed" type="number" [(ngModel)]="siftAssumedBlur" min="0" step="0.1"
+              (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy"></div>
+          <div class="control-field"><label for="sift-peak">Peak ratio</label>
+            <input id="sift-peak" type="number" [(ngModel)]="siftPeakRatio" min="0.01" max="1" step="0.05"
+              (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy"></div>
+          <div class="control-field"><label for="sift-clip">Descriptor clip</label>
+            <input id="sift-clip" type="number" [(ngModel)]="siftDescriptorThreshold" min="0.01" max="1" step="0.05"
+              (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy"></div>
+        </div>
+        <details class="sift-quick-tune">
+          <summary>Quick-tune sliders</summary>
+          <div class="quick-tune-inner">
+            <label>Contrast <strong>{{ siftContrast | number:'1.3-3' }}</strong></label>
+            <input type="range" min="0.001" max="0.1" step="0.001" [(ngModel)]="siftContrast" (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy">
+            <label>Edge threshold <strong>{{ siftEdge | number:'1.1-1' }}</strong></label>
+            <input type="range" min="1" max="20" step="0.5" [(ngModel)]="siftEdge" (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy">
+            <label>Octaves <strong>{{ siftOctaves }}</strong></label>
+            <input type="range" min="1" max="6" step="1" [(ngModel)]="siftOctaves" (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy">
+            <label>Intervals <strong>{{ siftIntervals }}</strong></label>
+            <input type="range" min="1" max="8" step="1" [(ngModel)]="siftIntervals" (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy">
+            <label>Sigma <strong>{{ siftSigma | number:'1.1-1' }}</strong></label>
+            <input type="range" min="0.5" max="3.0" step="0.1" [(ngModel)]="siftSigma" (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy">
+            <label>Assumed blur <strong>{{ siftAssumedBlur | number:'1.1-1' }}</strong></label>
+            <input type="range" min="0" max="1" step="0.1" [(ngModel)]="siftAssumedBlur" (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy">
+          </div>
+        </details>
+        <div class="method-note">Runs the full SIFT detector and 128D descriptor. To describe Harris points with SIFT, use Corner detector → SIFT.</div>
+      }
+      <div class="method-note">No keypoint-count cap. Every corner that passes detection and descriptor checks can be used for matching.</div>
+    </section>
+
+    <section class="feature-sidebar-section" [hidden]="activeView !== 'matching'">
+      <div class="section-heading"><span>02</span> Correspondence filter</div>
+      <div class="mini-section-label">Similarity metric</div>
+      <div class="selector-grid">
+        <button type="button" [class.active]="metric === 'ssd'" [disabled]="isBusy"
+          (click)="metric = 'ssd'; onMatchOptionsChanged()">SSD <small>↓ better</small></button>
+        <button type="button" [class.active]="metric === 'ncc'" [disabled]="isBusy"
+          (click)="metric = 'ncc'; onMatchOptionsChanged()">NCC <small>↑ better</small></button>
+      </div>
+      <div class="control-grid">
+        <div class="control-field"><label for="ratio">Ratio test <span>1 = off</span></label>
+          <input id="ratio" type="number" [(ngModel)]="ratio" min="0.01" max="1" step="0.05"
+            (ngModelChange)="onMatchOptionsChanged()" [disabled]="isBusy"></div>
+      </div>
+      <div class="control-field"><label for="abs-score">Absolute {{ metric.toUpperCase() }} threshold <span>blank = off</span></label>
+        <input id="abs-score" type="number" [(ngModel)]="matchThreshold" step="any" placeholder="Disabled"
+          (ngModelChange)="onMatchOptionsChanged()" [disabled]="isBusy"></div>
+      <label class="checkbox-field">
+        <input type="checkbox" [(ngModel)]="crossCheck" (ngModelChange)="onMatchOptionsChanged()" [disabled]="isBusy">
+        Mutual nearest-neighbor cross-check
+      </label>
+      <div class="method-note">Changing a descriptor setting clears outdated features. Changing a match setting retains descriptors but clears old matches.</div>
+    </section>
+
+    <section class="feature-sidebar-section feature-sidebar-actions">
+      @if (activeView === 'keypoints') {
+        <button type="button" class="feature-primary-button" (click)="extractOne('a')" [disabled]="!slots.a.blob || isBusy">
+          @if (isBusy) { <span class="feature-spinner"></span> {{ busyLabel }}… }
+          @else { <span>◎</span> Detect &amp; extract features }
+        </button>
+        <button type="button" class="feature-secondary-button" (click)="requestServerOverlay('a')" [disabled]="!slots.a.blob || isBusy">◉ Render API keypoints PNG</button>
+        <button type="button" class="feature-secondary-button" (click)="setView('matching')" [disabled]="isBusy">↔ Use Image A for matching</button>
+        <div class="sidebar-footnote">Extracted descriptors are kept in Image A when you switch to matching.</div>
+      } @else {
+        <label class="checkbox-field">
+          <input type="checkbox" [(ngModel)]="reuseExtractedFeatures" [disabled]="isBusy">
+          Reuse extracted keypoints where available
+        </label>
+        <button type="button" class="feature-primary-button" (click)="extractAndMatch()" [disabled]="!canExtract">
+          @if (isBusy) { <span class="feature-spinner"></span> {{ busyLabel }}… }
+          @else { <span>▶</span> Extract &amp; match both }
+        </button>
+        <button type="button" class="feature-secondary-button" (click)="matchOnly()" [disabled]="!canMatch">↻ Rematch using extracted features</button>
+        <div class="sidebar-footnote">Upload images in viewports A and B. Their original pixels are preserved for every request.</div>
+      }
+    </section>
+  </aside>
+
+  <main class="feature-main">
+    <header class="feature-topbar">
+      <div>
+        <div class="feature-eyebrow">WORKSPACE / FEATURE ENGINEERING</div>
+        <h2>{{ activeView === 'keypoints' ? 'Keypoint exploration' : 'Detection & matching' }}</h2>
+        <p>{{ activeView === 'keypoints' ? 'Study one image, its detected points and descriptors.' : 'Compare two images and explore their matched features.' }}</p>
+      </div>
+      <div class="pipeline-tags"><span>{{ detectorLabel }}</span><b>→</b><span>{{ effectiveDescriptor }}</span>@if (activeView === 'matching') { <b>→</b><span>{{ metric.toUpperCase() }}</span> }</div>
+    </header>
+    <nav class="feature-workspace-tabs" role="tablist" aria-label="Feature workspace">
+      <button type="button" role="tab" [attr.aria-selected]="activeView === 'keypoints'"
+        [class.active]="activeView === 'keypoints'" (click)="setView('keypoints')">◎ <span>Keypoints</span></button>
+      <button type="button" role="tab" [attr.aria-selected]="activeView === 'matching'"
+        [class.active]="activeView === 'matching'" (click)="setView('matching')">↔ <span>Feature matching</span></button>
+    </nav>
+
+    <div class="feature-content">
+      @if (error) { <div class="feature-notice error" role="alert"><strong>Request failed</strong> {{ error }}</div> }
+      @else if (status) { <div class="feature-notice success" role="status"><span>✓</span> {{ status }}</div> }
+      @else if (restoring) { <div class="feature-notice">Checking for an existing saved source image…</div> }
+
+      <section class="keypoint-workspace" [hidden]="activeView !== 'keypoints'">
+        <div class="feature-section-heading">
+          <div><div class="feature-eyebrow">01 / KEYPOINT STUDY</div><h3>Single-image feature extraction</h3></div>
+          <div class="feature-header-actions">
+            <button type="button" class="f-quiet" (click)="useLatest()" [disabled]="isBusy">↶ Load latest saved</button>
+            <button type="button" class="f-quiet" (click)="saveAsLatest()" [disabled]="!slots.a.blob || isBusy">↑ Save as latest</button>
+            <button type="button" class="f-quiet" (click)="setView('matching')">↔ Open matching</button>
+          </div>
+        </div>
+        <div class="keypoint-upload-bar" [class.is-drag-over]="draggingSide === 'a'"
+             (dragover)="onDragOver('a', $event)" (dragleave)="onDragLeave('a', $event)" (drop)="onDrop('a', $event)">
+          <div class="upload-symbol">↑</div>
+          <div class="upload-copy"><strong>{{ slots.a.name || 'Select an image to inspect' }}</strong>
+            <span>Drop an image here, or browse your files. This source becomes Image A in matching.</span></div>
+          <label class="f-quiet f-upload" [class.disabled]="isBusy">Choose image<input type="file" accept="image/*" (change)="onFile('a', $event)" [disabled]="isBusy"></label>
+        </div>
+        <div class="keypoint-preview-grid">
+          <article class="image-port">
+            <div class="image-port-title"><div class="port-identity"><span class="port-letter">A</span><div><small>INPUT VIEWPORT</small><h4>Original image</h4></div></div><div class="port-status">{{ slots.a.blob ? 'IMAGE READY' : 'EMPTY' }}</div></div>
+            <div class="image-stage keypoint-stage">
+              @if (slots.a.url) { <img class="source-image" [src]="slots.a.url" alt="Source image" /> }
+              @else { <div class="image-placeholder"><span class="image-placeholder-icon">▧</span><strong>{{ slots.a.blob ? "Image ready" : "No image loaded" }}</strong><p>{{ slots.a.previewError || "Upload a file or restore the latest saved image." }}</p></div> }
+            </div>
+            <div class="image-port-meta"><span class="filename">{{ slots.a.name || 'Awaiting input' }}</span><span>{{ slots.a.image ? slots.a.image.naturalWidth + ' × ' + slots.a.image.naturalHeight : '—' }}</span></div>
+          </article>
+          <article class="image-port">
+            <div class="image-port-title"><div class="port-identity"><span class="port-letter secondary-letter">◎</span><div><small>OUTPUT VIEWPORT</small><h4>Detected keypoints</h4></div></div><div class="port-status" [class.populated]="!!slots.a.features">{{ slots.a.features ? 'EXTRACTED' : slots.a.overlayImage ? 'API OVERLAY' : 'NOT PROCESSED' }}</div></div>
+            <div class="image-stage keypoint-stage">
+              @if (!slots.a.features && !slots.a.overlayImage) { <div class="image-placeholder"><span class="image-placeholder-icon">◎</span><strong>No keypoints yet</strong><p>Click Detect &amp; extract or Render API keypoints PNG to populate this output.</p></div> }
+              <canvas #keypointCanvas [hidden]="!slots.a.image || (!slots.a.features && !slots.a.overlayImage)" aria-label="Detected keypoints on image A"></canvas>
+            </div>
+            <div class="image-port-actions keypoint-view-actions">
+              <button type="button" class="f-quiet" (click)="setPreview('a','raw')" [class.selected]="slots.a.preview === 'raw'" [disabled]="!slots.a.image">Raw</button>
+              <button type="button" class="f-quiet" (click)="setPreview('a','points')" [class.selected]="slots.a.preview === 'points'" [disabled]="!slots.a.features">Drawn points</button>
+              <button type="button" class="f-quiet" (click)="setPreview('a','server')" [class.selected]="slots.a.preview === 'server'" [disabled]="!slots.a.blob || isBusy">API overlay</button>
+              <button type="button" class="f-quiet" (click)="downloadKeypointPreview()" [disabled]="!slots.a.features && !slots.a.overlayImage">↓ PNG</button>
+            </div>
+          </article>
+        </div>
+        <div class="keypoint-tools">
+          <label class="checkbox-field"><input type="checkbox" [(ngModel)]="drawOrientations" (ngModelChange)="invalidateOverlaysAndRedraw()"> Draw orientation rays</label>
+          <label class="checkbox-field" title="For full SIFT, the circle size follows each keypoint scale."><input type="checkbox" [(ngModel)]="scaleCircleWithSigma" (ngModelChange)="invalidateOverlaysAndRedraw()"> Scale circles with SIFT sigma</label>
+          <div class="radius-control"><label for="kp-marker-radius">Marker radius</label><input id="kp-marker-radius" type="number" min="1" max="50" [(ngModel)]="circleRadius" (ngModelChange)="invalidateOverlaysAndRedraw()"></div>
+          <button type="button" class="f-quiet" (click)="downloadFeatures('a')" [disabled]="!slots.a.features">↓ Descriptors JSON</button>
+        </div>
+        <div class="feature-stats-grid keypoint-stat-grid">
+          <article class="feature-stat"><span>KEYPOINTS / DESCRIPTORS</span><strong>{{ slots.a.features?.num_keypoints ?? '—' }}</strong><small>Valid features in Image A</small></article>
+          <article class="feature-stat"><span>EXTRACTION TIME</span><strong>{{ slots.a.features ? (slots.a.features.execution_time_ms | number:'1.0-2') + ' ms' : '—' }}</strong><small>Server reported duration</small></article>
+          <article class="feature-stat"><span>DETECTOR</span><strong class="stat-label-value">{{ detectorLabel }}</strong><small>{{ featureMode === 'sift' ? 'DoG scale space' : 'Structure tensor' }}</small></article>
+          <article class="feature-stat"><span>DESCRIPTOR</span><strong class="stat-label-value">{{ effectiveDescriptor }}</strong><small>Ready for matching</small></article>
+        </div>
+        <div class="keypoint-help">The extracted feature set remains attached to Image A. Click <strong>Feature matching</strong>, upload Image B, and use <strong>Extract &amp; match</strong> to reuse it.</div>
+      </section>
+
+      <div class="matching-workspace" [hidden]="activeView !== 'matching'">
+      <div class="feature-section-heading">
+        <div><div class="feature-eyebrow">01 / SOURCE PORTS</div><h3>Image pair</h3></div>
+        <div class="feature-header-actions">
+          <button type="button" class="f-quiet" (click)="useLatest()" [disabled]="isBusy">↶ Restore latest to A</button>
+          <button type="button" class="f-quiet" (click)="saveAsLatest()" [disabled]="!slots.a.blob || isBusy">↑ Save A to backend</button>
+          <button type="button" class="f-quiet" (click)="swapImages()" [disabled]="isBusy || (!slots.a.blob && !slots.b.blob)">⇄ Swap A / B</button>
+        </div>
+      </div>
+
+      <div class="feature-image-grid">
+        <article class="image-port">
+          <div class="image-port-title">
+            <div class="port-identity"><span class="port-letter">A</span><div><small>VIEWPORT 01</small><h4>Reference image</h4></div></div>
+            <div class="port-status" [class.populated]="!!slots.a.features">{{ slots.a.features ? 'EXTRACTED' : slots.a.blob ? 'IMAGE READY' : 'EMPTY' }}</div>
+          </div>
+          <div class="image-stage" [class.is-drag-over]="draggingSide === 'a'"
+            (dragover)="onDragOver('a', $event)" (dragleave)="onDragLeave('a', $event)" (drop)="onDrop('a', $event)">
+            @if (!slots.a.image) {
+              <div class="image-placeholder"><span class="image-placeholder-icon">▧</span><strong>{{ slots.a.blob ? "Image A ready" : "Drop in the first image" }}</strong><p>{{ slots.a.previewError || "Use the upload button below or restore the saved original." }}</p></div>
+            }
+            <canvas #imageCanvasA [hidden]="!slots.a.image" aria-label="Reference image with keypoints"></canvas>
+          </div>
+          <div class="image-port-meta">
+            <span class="filename" [title]="slots.a.name">{{ slots.a.name || 'No file selected' }}</span>
+            <span>{{ slots.a.image ? slots.a.image.naturalWidth + ' × ' + slots.a.image.naturalHeight : '—' }}</span>
+          </div>
+          <div class="image-port-actions">
+            <label class="f-quiet f-upload" [class.disabled]="isBusy">↑ Upload A<input type="file" accept="image/*" (change)="onFile('a', $event)" [disabled]="isBusy"></label>
+            <button class="f-quiet" type="button" (click)="extractOne('a')" [disabled]="!slots.a.blob || isBusy">◎ Extract</button>
+            <button class="f-quiet" type="button" (click)="downloadViewport('a')" [disabled]="!slots.a.image">↓ View</button>
+            <button class="f-quiet danger-text" type="button" (click)="clearSide('a')" [disabled]="!slots.a.blob || isBusy" aria-label="Clear image A">×</button>
+          </div>
+          @if (slots.a.image) {
+            <div class="preview-row"><span>Preview</span>
+              <div class="preview-switch">
+                <button type="button" [class.active]="slots.a.preview === 'raw'" (click)="setPreview('a','raw')">Raw</button>
+                <button type="button" [class.active]="slots.a.preview === 'points'" (click)="setPreview('a','points')">Keypoints</button>
+                <button type="button" [class.active]="slots.a.preview === 'server'" (click)="setPreview('a','server')" [disabled]="isBusy">API overlay</button>
+              </div>
+            </div>
+          }
+          <div class="image-port-foot">
+            <span><strong>{{ slots.a.features?.num_keypoints ?? '—' }}</strong> descriptors</span>
+            <span>{{ slots.a.features?.execution_time_ms === undefined ? 'Not processed' : (slots.a.features?.execution_time_ms | number:'1.0-1') + ' ms' }}</span>
+            <button type="button" (click)="downloadFeatures('a')" [disabled]="!slots.a.features">Export JSON ↓</button>
+          </div>
+        </article>
+
+        <article class="image-port">
+          <div class="image-port-title">
+            <div class="port-identity"><span class="port-letter secondary-letter">B</span><div><small>VIEWPORT 02</small><h4>Target image</h4></div></div>
+            <div class="port-status" [class.populated]="!!slots.b.features">{{ slots.b.features ? 'EXTRACTED' : slots.b.blob ? 'IMAGE READY' : 'EMPTY' }}</div>
+          </div>
+          <div class="image-stage" [class.is-drag-over]="draggingSide === 'b'"
+            (dragover)="onDragOver('b', $event)" (dragleave)="onDragLeave('b', $event)" (drop)="onDrop('b', $event)">
+            @if (!slots.b.image) {
+              <div class="image-placeholder"><span class="image-placeholder-icon">▧</span><strong>{{ slots.b.blob ? 'Image B ready' : 'Drop in the second image' }}</strong><p>{{ slots.b.previewError || 'Match similar points across two images, rotations, or viewpoints.' }}</p></div>
+            }
+            <canvas #imageCanvasB [hidden]="!slots.b.image" aria-label="Target image with keypoints"></canvas>
+          </div>
+          <div class="image-port-meta">
+            <span class="filename" [title]="slots.b.name">{{ slots.b.name || 'No file selected' }}</span>
+            <span>{{ slots.b.image ? slots.b.image.naturalWidth + ' × ' + slots.b.image.naturalHeight : '—' }}</span>
+          </div>
+          <div class="image-port-actions">
+            <label class="f-quiet f-upload" [class.disabled]="isBusy">↑ Upload B<input type="file" accept="image/*" (change)="onFile('b', $event)" [disabled]="isBusy"></label>
+            <button class="f-quiet" type="button" (click)="extractOne('b')" [disabled]="!slots.b.blob || isBusy">◎ Extract</button>
+            <button class="f-quiet" type="button" (click)="downloadViewport('b')" [disabled]="!slots.b.image">↓ View</button>
+            <button class="f-quiet danger-text" type="button" (click)="clearSide('b')" [disabled]="!slots.b.blob || isBusy" aria-label="Clear image B">×</button>
+          </div>
+          @if (slots.b.image) {
+            <div class="preview-row"><span>Preview</span>
+              <div class="preview-switch">
+                <button type="button" [class.active]="slots.b.preview === 'raw'" (click)="setPreview('b','raw')">Raw</button>
+                <button type="button" [class.active]="slots.b.preview === 'points'" (click)="setPreview('b','points')">Keypoints</button>
+                <button type="button" [class.active]="slots.b.preview === 'server'" (click)="setPreview('b','server')" [disabled]="isBusy">API overlay</button>
+              </div>
+            </div>
+          }
+          <div class="image-port-foot">
+            <span><strong>{{ slots.b.features?.num_keypoints ?? '—' }}</strong> descriptors</span>
+            <span>{{ slots.b.features?.execution_time_ms === undefined ? 'Not processed' : (slots.b.features?.execution_time_ms | number:'1.0-1') + ' ms' }}</span>
+            <button type="button" (click)="downloadFeatures('b')" [disabled]="!slots.b.features">Export JSON ↓</button>
+          </div>
+        </article>
+      </div>
+
+      <section class="comparison-card">
+        <div class="comparison-top">
+          <div><div class="feature-eyebrow">02 / MATCH VISUALIZATION</div><h3>Correspondence map</h3><p>Interactive side-by-side canvas with selectable matches.</p></div>
+          <div class="comparison-head-tools">
+            <button type="button" class="f-quiet" [class.selected]="comparisonMode === 'interactive'" (click)="comparisonMode = 'interactive'; renderComparisonView()">Interactive</button>
+            <button type="button" class="f-quiet" [class.selected]="comparisonMode === 'server'" (click)="requestServerMatch()" [disabled]="!matchResult || isBusy">API PNG</button>
+            <button type="button" class="f-quiet" (click)="downloadComparison()" [disabled]="!slots.a.image || !slots.b.image">↓ PNG</button>
+          </div>
+        </div>
+        <div class="comparison-toolbar">
+          <label class="feature-check"><input type="checkbox" [(ngModel)]="drawLines" (ngModelChange)="onDrawingChanged()"> Match lines</label>
+          <label class="feature-check"><input type="checkbox" [(ngModel)]="drawCircles" (ngModelChange)="onDrawingChanged()"> Point circles</label>
+          <label class="feature-check"><input type="checkbox" [(ngModel)]="drawOrientations" (ngModelChange)="invalidateOverlaysAndRedraw()"> Orientations</label>
+          <label class="feature-check" title="For full SIFT keypoints, scale the port circles to the feature sigma."><input type="checkbox" [(ngModel)]="scaleCircleWithSigma" (ngModelChange)="invalidateOverlaysAndRedraw()"> Scale markers</label>
+          <label class="feature-check"><input type="checkbox" [(ngModel)]="showOnlySelected" (ngModelChange)="onDrawingChanged()"> Focus selected</label>
+          <label class="feature-check"><input type="checkbox" [(ngModel)]="nativeZoom"> 1:1 pixels</label>
+          <div class="radius-control"><label for="marker-radius">Circle radius</label><input id="marker-radius" type="number" min="1" max="50" [(ngModel)]="circleRadius" (ngModelChange)="invalidateOverlaysAndRedraw()"></div>
+          <span class="render-all-count">{{ visibleMatchEntries.length }} / {{ matches.length }} matches drawn</span>
+        </div>
+        <div class="comparison-stage" [class.native-zoom]="nativeZoom">
+          @if (!slots.a.image || !slots.b.image) {
+            <div class="comparison-placeholder"><div>↔</div><strong>Feature connections appear here</strong><p>Upload both images and select <b>Extract &amp; match both</b>. Turn lines on or off at any time.</p></div>
+          }
+          <canvas #comparisonCanvas [hidden]="!slots.a.image || !slots.b.image"
+            aria-label="Matched keypoints connecting image A and image B"
+            (click)="onComparisonClick($event)"></canvas>
+        </div>
+        <div class="comparison-bottom"><span><span class="status-indicator"></span>{{ matchResult ? 'Matching complete · ' + detectorLabel + ' / ' + effectiveDescriptor : 'No matching results yet' }}</span><span>{{ comparisonMode === 'server' ? 'Static backend PNG' : 'Click a matched point or a row below to inspect it' }}</span></div>
+      </section>
+
+      <div class="feature-stats-grid">
+        <article class="feature-stat"><span>REFERENCE FEATURES</span><strong>{{ slots.a.features?.num_keypoints ?? '—' }}</strong><small>{{ slots.a.image ? 'Image A' : 'Awaiting image' }}</small></article>
+        <article class="feature-stat"><span>TARGET FEATURES</span><strong>{{ slots.b.features?.num_keypoints ?? '—' }}</strong><small>{{ slots.b.image ? 'Image B' : 'Awaiting image' }}</small></article>
+        <article class="feature-stat highlight-stat"><span>ACCEPTED MATCHES</span><strong>{{ matchResult?.num_matches ?? '—' }}</strong><small>Ratio &amp; cross-check</small></article>
+        <article class="feature-stat"><span>MATCHING TIME</span><strong>{{ matchResult ? (matchResult.matching_time_ms | number:'1.0-2') + ' ms' : '—' }}</strong><small>Server computation</small></article>
+      </div>
+
+      <section class="match-details">
+        <div class="match-details-header"><div><div class="feature-eyebrow">03 / RESULT INSPECTOR</div><h3>Matched point pairs</h3><p>Sorted by nearest-descriptor distance. Select a row to highlight the same pair in every viewport.</p></div>
+          <button class="f-quiet" type="button" (click)="downloadMatches()" [disabled]="!matchResult">↓ Export matches JSON</button>
+        </div>
+        @if (!matchResult) {
+          <div class="empty-results"><span>⌁</span><h4>No matching results</h4><p>Run the full pipeline or extract each image separately and click Rematch.</p></div>
+        } @else if (!matches.length) {
+          <div class="empty-results"><span>◎</span><h4>No pairs passed the filters</h4><p>Try lowering the ratio strictness, disabling cross-check, or extracting more features.</p></div>
+        } @else {
+          <div class="match-details-layout">
+            <div class="match-table-scroll">
+              <table class="match-table"><thead><tr><th>#</th><th>Image A</th><th>Image B</th><th>{{ metric.toUpperCase() }} score</th><th>Inspect</th></tr></thead>
+                <tbody>
+                  @for (entry of pagedMatches; track entry.index) {
+                    <tr [class.active]="selectedMatchIndex === entry.index" (click)="selectMatch(entry.index)" tabindex="0" (keydown.enter)="selectMatch(entry.index)" (keydown.space)="selectMatch(entry.index); $event.preventDefault()">
+                      <td><span class="match-color" [style.background]="colorForMatch(entry.index)"></span>{{ entry.index + 1 }}</td>
+                      <td>({{ entry.match.point1[0] | number:'1.0-0' }}, {{ entry.match.point1[1] | number:'1.0-0' }})</td>
+                      <td>({{ entry.match.point2[0] | number:'1.0-0' }}, {{ entry.match.point2[1] | number:'1.0-0' }})</td>
+                      <td class="score-cell">{{ entry.match.score | number:'1.2-5' }}</td>
+                      <td><span class="row-inspect">{{ selectedMatchIndex === entry.index ? '● Focused' : '○ View' }}</span></td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+              <div class="match-pager">
+                <button type="button" (click)="changeMatchPage(-1)" [disabled]="matchPage === 0">← Previous</button>
+                <span>Page {{ matchPage + 1 }} / {{ matchPageCount }} · All {{ matches.length }} matches retained</span>
+                <button type="button" (click)="changeMatchPage(1)" [disabled]="matchPage + 1 >= matchPageCount">Next →</button>
+              </div>
+            </div>
+            <aside class="selected-inspector">
+              <div class="selected-head"><h4>Descriptor inspector</h4><span>{{ effectiveDescriptor }}</span></div>
+              @if (selectedMatch) {
+                <div class="selected-pair"><span>PAIR #{{ (selectedMatchIndex ?? 0) + 1 }}</span><strong>{{ metric.toUpperCase() }} {{ selectedMatch!.score | number:'1.3-6' }}</strong></div>
+                <div class="selected-descriptor"><span>Image A · descriptor {{ selectedMatch!.index1 }}</span><canvas #descriptorCanvasA aria-label="Descriptor for image A"></canvas></div>
+                <div class="selected-descriptor"><span>Image B · descriptor {{ selectedMatch!.index2 }}</span><canvas #descriptorCanvasB aria-label="Descriptor for image B"></canvas></div>
+              } @else {
+                <div class="inspector-idle"><span>◎</span><p>Select a row to inspect the 64D MOPS patch or 128D SIFT gradient histogram for both points.</p></div>
+              }
+            </aside>
+          </div>
+          <div class="match-detail-footer">{{ matches.length }} matches returned · {{ metric === 'ssd' ? 'Lower SSD is better' : 'Higher NCC is better' }} · Full result retained; inspector is paginated for browser performance</div>
+        }
+      </section>
+
+      <footer class="feature-footer">Harris / Lambda Minus / SIFT · MOPS · SSD / NCC · FastAPI feature endpoints</footer>
+      </div><!-- matching workspace -->
+    </div>
+  </main>
+</div>

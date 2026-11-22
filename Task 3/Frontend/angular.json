@@ -3,7 +3,7 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "sift-frontend": {
+    "vision-lab": {
       "projectType": "application",
       "root": "",
       "sourceRoot": "src",
@@ -12,31 +12,36 @@
         "build": {
           "builder": "@angular-devkit/build-angular:application",
           "options": {
-            "outputPath": "dist/sift-frontend",
+            "outputPath": "dist/vision-lab",
             "index": "src/index.html",
             "browser": "src/main.ts",
             "polyfills": ["zone.js"],
             "tsConfig": "tsconfig.app.json",
-            "styles": ["src/styles.css"]
+            "assets": [],
+            "styles": ["src/styles.css"],
+            "scripts": []
           },
           "configurations": {
-            "production": { "outputHashing": "all" },
-            "development": { "optimization": false, "extractLicenses": false, "sourceMap": true }
+            "production": {
+              "optimization": true,
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "sourceMap": true
+            }
           },
-          "defaultConfiguration": "production"
+          "defaultConfiguration": "development"
         },
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
-            "production": { "buildTarget": "sift-frontend:build:production" },
-            "development": { "buildTarget": "sift-frontend:build:development" }
+            "development": { "buildTarget": "vision-lab:build:development" },
+            "production": { "buildTarget": "vision-lab:build:production" }
           },
           "defaultConfiguration": "development"
         }
       }
     }
-  },
-  "cli": {
-    "analytics": false
   }
 }

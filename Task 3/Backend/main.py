@@ -37,7 +37,10 @@ from Backend.Services.SIFTService import (
     draw_sift_keypoints,
 )
 
-
+from typing import Literal
+from Backend.Services.CornerFeatureService import (
+    ExtractCornerFeatures, DetectCorners, DrawCorners,
+)
 
 app = FastAPI()
 
@@ -460,3 +463,46 @@ async def visualize_sift_endpoint(
     response.headers["X-Keypoint-Count"] = str(result["num_keypoints"])
     response.headers["X-Execution-Time-Ms"] = str(result["execution_time_ms"])
     return response
+
+
+@app.post("/corners")
+async def corner_features(
+    file: Optional[UploadFile] = File(None),
+    method: Literal["harris", "lamda_minus"] = Form("harris"),
+    descriptor_method: Literal["sift", "mops"] = Form("mops"),
+    threshold: float = Form(0.01, ge=0, le=1),
+    window_size: int = Form(5, ge=1, le=31),
+    margin: Optional[int] = Form(None, ge=0),
+    max_keypoints: int = Form(500, ge=1, le=4000),
+):
+    """Return match-ready keypoints and SIFT/MOPS descriptors (JSON)."""
+    image = await read_uploaded_image(file, convert_to_grayscale=False)
+    try:
+        return await run_in_threadpool(
+            ExtractCornerFeatures, image, method, descriptor_method,
+            threshold, window_size, margin, max_keypoints,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/corners/overlay")
+async def corner_overlay(
+    file: Optional[UploadFile] = File(None),
+    method: Literal["harris", "lamda_minus"] = Form("harris"),
+    threshold: float = Form(0.01, ge=0, le=1),
+    window_size: int = Form(5, ge=1, le=31),
+    margin: int = Form(10, ge=0),
+    max_keypoints: int = Form(500, ge=1, le=4000),
+    circle_radius: int = Form(5, ge=1, le=100),
+):
+    """Return PNG with red circles around detected Harris/Lambda Minus corners."""
+    image = await read_uploaded_image(file, convert_to_grayscale=False)
+    try:
+        _, points = await run_in_threadpool(
+            DetectCorners, image, method, threshold, window_size, margin, max_keypoints
+        )
+        overlay = await run_in_threadpool(DrawCorners, image, points, circle_radius)
+        return process_image(overlay)  # existing helper expects RGB -> encodes PNG
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
