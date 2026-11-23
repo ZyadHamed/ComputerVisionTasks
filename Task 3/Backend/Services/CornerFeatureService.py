@@ -1,11 +1,8 @@
-"""Harris / Lambda Minus corner features, with SIFT or MOPS descriptors.
+"""Harris / Lambda Minus corner features with SIFT or MOPS descriptors.
 
-Images passed to this service must be grayscale, RGB, or RGBA (NOT OpenCV BGR).
-The FastAPI `read_uploaded_image(..., convert_to_grayscale=False)` helper
-already converts decoded OpenCV uploads to RGB/RGBA.
-
-Output is compatible with FeatureMatchingService.match_feature_sets():
-  {'keypoints': [[x, y], ...], 'descriptors': [[...], ...], ...}
+Uses SIFTService.Generate_Scale_Space for multi-octave scale handling.
+Images are grayscale, RGB or RGBA (not BGR).
+The returned keypoint coordinates are in the ORIGINAL image pixel frame.
 """
 
 import time
@@ -26,7 +23,7 @@ from Backend.Services.SIFTService import (
     compute_descriptor,
 )
 
-CORNER_METHODS = ("harris", "lamda_minus")  # 'lamda_minus' preserves requested API spelling
+CORNER_METHODS = ("harris", "lamda_minus")
 DESCRIPTOR_METHODS = ("sift", "mops")
 
 SOBEL_X = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=np.float64)
@@ -64,7 +61,6 @@ def ApplyHarrisOperator(gray: np.ndarray, method: str = "harris") -> np.ndarray:
     if method == "harris":
         return sxx * syy - sxy ** 2 - 0.04 * (sxx + syy) ** 2
 
-    # Shi-Tomasi / lambda-minus: smaller eigenvalue of [[sxx,sxy],[sxy,syy]].
     return 0.5 * (sxx + syy - np.sqrt(np.maximum((sxx - syy) ** 2 + 4 * sxy ** 2, 0)))
 
 
@@ -107,7 +103,7 @@ def DetectCorners(
     window_size: int = 5, margin: int = 10,
     max_keypoints: Optional[int] = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return (response matrix, detected keypoints); no descriptors computed."""
+    """Single-scale detector: return (response matrix, detected keypoints)."""
     gray = _gray(image)
     R = ApplyHarrisOperator(gray, method)
     points = GetHarrisKeypoints(R, threshold, window_size, margin, max_keypoints)
@@ -138,7 +134,7 @@ def ExtractMOPSDescriptorsFromHarris(
         patch = cv2.warpAffine(blurred, matrix, (8, 8), flags=cv2.INTER_LINEAR)
         descriptor = patch.reshape(-1)
         std = float(descriptor.std())
-        if std < 1e-6:  # A constant patch cannot be normalized meaningfully.
+        if std < 1e-6:
             continue
 
         descriptor = (descriptor - descriptor.mean()) / std
@@ -152,26 +148,39 @@ def ExtractMOPSDescriptorsFromHarris(
 
 def ExtractSIFTDescriptorsFromHarris(
     gray: np.ndarray, keypoints: np.ndarray,
+    scale_space: Optional[list[list[np.ndarray]]] = None,
+    octave: int = 0,
 ) -> tuple[np.ndarray, np.ndarray, list[float]]:
-    """Use SIFTService to describe supplied Harris/Lambda Minus points at sigma=1.6."""
+    """Describe corners at a pyramid octave; keypoints and returned points are octave-local.
+
+    If scale_space is supplied, reuse it without generating a second pyramid.
+    compute_descriptor() expects x/y and sigma in ORIGINAL-image coordinates.
+    """
     if not len(keypoints):
         return np.empty((0, 2)), np.empty((0, 128)), []
 
-    scale_space = Generate_Scale_Space(gray, num_octaves=1)
-    # Reuse SIFT orientation functions while computing image-wide gradients only once.
-    magnitude, orientation = Calculate_Gradients(scale_space[0][0])
+    if scale_space is None:
+        scale_space = Generate_Scale_Space(gray, num_octaves=1)
+        octave = 0
+
+    magnitude, orientation = Calculate_Gradients(scale_space[octave][0])
+    factor = 2 ** octave
     points, descriptors, angles = [], [], []
     for x, y in keypoints:
-        kp = {"x": float(x), "y": float(y), "sigma": 1.6, "octave": 0, "scale": 0}
+        x, y = float(x), float(y)
+        kp = {
+            "x": x * factor, "y": y * factor,
+            "sigma": 1.6 * factor, "octave": octave, "scale": 0,
+        }
         weighted, local_ori = Apply_Gaussian_Weighting(
-            magnitude, orientation, round(float(x)), round(float(y)), 1.6
+            magnitude, orientation, round(x), round(y), 1.6
         )
         histogram = Build_Orientation_Histogram(weighted, local_ori)
         thetas = Assign_Dominant_Orientation(histogram)
         for theta in thetas:
             descriptor = compute_descriptor(kp, scale_space, theta)
             if descriptor is not None:
-                points.append([float(x), float(y)])
+                points.append([x, y])
                 descriptors.append(descriptor)
                 angles.append(float(theta))
 
@@ -183,34 +192,74 @@ def ExtractCornerFeatures(
     image: np.ndarray, method: str = "harris", descriptor_method: str = "mops",
     threshold: float = 0.01, window_size: int = 5,
     margin: Optional[int] = None, max_keypoints: Optional[int] = None,
+    num_octaves: int = 3,
 ) -> dict:
-    """Return match-ready [x,y] keypoints + SIFT-128 or MOPS-64 descriptors."""
+    """Detect multi-octave Harris/Lambda Minus features and return match-ready descriptors.
+
+    Uses the EXISTING SIFT Gaussian pyramid, taking its first Gaussian scale
+    at each octave. Coordinates in the response are original-image pixels.
+    max_keypoints, if supplied, caps candidates across all octaves together.
+    """
     if descriptor_method not in DESCRIPTOR_METHODS:
         raise ValueError(f"descriptor_method must be one of {DESCRIPTOR_METHODS}")
+    if not isinstance(num_octaves, int) or num_octaves < 1:
+        raise ValueError("num_octaves must be a positive integer")
+    if max_keypoints is not None and max_keypoints < 1:
+        raise ValueError("max_keypoints must be positive when provided")
     if margin is None:
         margin = 30 if descriptor_method == "mops" else 10
 
     start = time.perf_counter()
     gray = _gray(image)
-    R = ApplyHarrisOperator(gray, method)
-    candidates = GetHarrisKeypoints(R, threshold, window_size, margin, max_keypoints)
+    pyramid = Generate_Scale_Space(gray, num_octaves=num_octaves)
 
-    if descriptor_method == "sift":
-        points, descriptors, angles = ExtractSIFTDescriptorsFromHarris(gray, candidates)
-    else:
-        points, descriptors, angles = ExtractMOPSDescriptorsFromHarris(gray, candidates)
+    # Detect corners on one Gaussian image at each octave.
+    responses = []
+    candidates = []
+    for octave, levels in enumerate(pyramid):
+        R = ApplyHarrisOperator(levels[0], method)
+        responses.append(R)
+        pts = GetHarrisKeypoints(R, threshold, window_size, margin)
+        candidates.extend(
+            (octave, int(x), int(y), float(R[y, x])) for x, y in pts
+        )
 
-    details = [{
-        "x": float(x), "y": float(y), "sigma": 1.6,
-        "octave": 0, "scale": 0, "angle": float(angle),
-        "response": float(R[int(round(y)), int(round(x))]),
-    } for (x, y), angle in zip(points, angles)]
+    if max_keypoints is not None:
+        candidates.sort(key=lambda item: item[3], reverse=True)
+        candidates = candidates[:max_keypoints]
+
+    keypoints, descriptors, details = [], [], []
+    for octave, levels in enumerate(pyramid):
+        local_points = np.array(
+            [[x, y] for o, x, y, _ in candidates if o == octave], dtype=float
+        ).reshape(-1, 2)
+        if not len(local_points):
+            continue
+
+        if descriptor_method == "sift":
+            pts, descs, angles = ExtractSIFTDescriptorsFromHarris(
+                levels[0], local_points, scale_space=pyramid, octave=octave
+            )
+        else:
+            pts, descs, angles = ExtractMOPSDescriptorsFromHarris(levels[0], local_points)
+
+        factor = 2 ** octave
+        for (x, y), desc, angle in zip(pts, descs, angles):
+            x_original, y_original = float(x * factor), float(y * factor)
+            keypoints.append([x_original, y_original])
+            descriptors.append(desc.tolist())
+            details.append({
+                "x": x_original, "y": y_original,
+                "sigma": 1.6 * factor,
+                "octave": octave, "scale": 0, "angle": float(angle),
+                "response": float(responses[octave][int(round(y)), int(round(x))]),
+            })
 
     return {
-        "keypoints": points.tolist(),
-        "descriptors": descriptors.tolist(),
+        "keypoints": keypoints,
+        "descriptors": descriptors,
         "keypoint_details": details,
-        "num_keypoints": len(points),
+        "num_keypoints": len(keypoints),
         "execution_time_ms": round((time.perf_counter() - start) * 1000, 3),
         "detector_method": method,
         "descriptor_method": descriptor_method,
@@ -235,5 +284,5 @@ def DrawCorners(image: np.ndarray, keypoints: np.ndarray, circle_radius: int = 5
         canvas = canvas[:, :, :3].copy()
     for x, y in keypoints:
         cv2.circle(canvas, (int(round(x)), int(round(y))), circle_radius,
-                   (255, 0, 0), 2, cv2.LINE_AA)  # RGB red
+                   (255, 0, 0), 2, cv2.LINE_AA)
     return canvas

@@ -54,8 +54,9 @@ export interface CornerOptions {
   threshold: number;
   window_size: number;
   margin: number | null;
-  max_keypoints: number | null;
+  num_octaves: number;
 }
+
 
 export interface SiftOptions {
   max_keypoints: number | null;
@@ -152,7 +153,6 @@ export class FeatureLabService {
       threshold: options.threshold,
       window_size: options.window_size,
       margin: options.margin ?? (options.descriptor_method === 'mops' ? 30 : 10),
-      max_keypoints: options.max_keypoints,
       circle_radius: circleRadius,
       // Supported by the optional no-save backend patch in the README.
       save_as_latest: false,

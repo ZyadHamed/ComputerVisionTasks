@@ -8,10 +8,8 @@ Input contract (one "feature set" per image, JSON-like dict)
     }
 
     SIFT  : "descriptors" is REQUIRED with shape (N, 128).
-    Harris: "descriptors" is OPTIONAL. If omitted, a flattened square patch of
-            `patch_size` x `patch_size` grayscale pixels around each corner is
-            used as the descriptor, i.e. shape (N, patch_size**2). Corners
-            closer than patch_size // 2 pixels to the border are dropped.
+    Harris: "descriptors" is REQUIRED and may come from MOPS or another
+            external descriptor extractor (shape (N, D)).
 
     Keypoint coordinates must be in the pixel frame of the images that are
     uploaded alongside them (x = column, y = row, origin at the top-left).
@@ -32,10 +30,6 @@ except ModuleNotFoundError:
 SUPPORTED_METHODS = ("sift", "harris")
 SUPPORTED_METRICS = ("ssd", "ncc")
 SIFT_DESCRIPTOR_SIZE = 128
-
-# The score matrix is N1 x N2 float64 (4000 x 4000 = ~128 MB), so cap the input.
-MAX_FEATURES = 4000
-
 
 # ----------------------------------------------------------------------------
 # Image helpers
@@ -88,29 +82,6 @@ def ncc_matrix(d1: np.ndarray, d2: np.ndarray, eps: float = 1e-8) -> np.ndarray:
     denom = np.linalg.norm(a, axis=1)[:, None] * np.linalg.norm(b, axis=1)[None, :]
     score = np.where(denom > eps, (a @ b.T) / np.maximum(denom, eps), 0.0)
     return np.clip(score, -1.0, 1.0)
-
-
-# ----------------------------------------------------------------------------
-# Descriptors for Harris corners (patch around each point)
-# ----------------------------------------------------------------------------
-
-def extract_patch_descriptors(
-    gray: np.ndarray, keypoints: np.ndarray, patch_size: int = 11
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Flattened patch descriptors, shape (M, patch_size**2).
-
-    Returns (descriptors, valid_mask). valid_mask has length N; keypoints too
-    close to the border for a full patch are False and get no descriptor.
-    """
-    half = patch_size // 2
-    h, w = gray.shape
-    xs = np.rint(keypoints[:, 0]).astype(int)
-    ys = np.rint(keypoints[:, 1]).astype(int)
-    valid = (xs >= half) & (xs < w - half) & (ys >= half) & (ys < h - half)
-
-    windows = np.lib.stride_tricks.sliding_window_view(gray, (patch_size, patch_size))
-    patches = windows[ys[valid] - half, xs[valid] - half]    # (M, p, p), top-left indexing
-    return patches.reshape(patches.shape[0], -1).astype(np.float64), valid
 
 
 # ----------------------------------------------------------------------------
@@ -186,14 +157,12 @@ def parse_feature_set(data: dict, name: str) -> Tuple[np.ndarray, Optional[np.nd
         return np.empty((0, 2)), None
     if keypoints.ndim != 2 or keypoints.shape[1] != 2:
         raise ValueError(f"{name}.keypoints must have shape (N, 2) as [x, y]; got {keypoints.shape}.")
-    if len(keypoints) > MAX_FEATURES:
-        raise ValueError(f"{name} has {len(keypoints)} keypoints; the limit is {MAX_FEATURES}.")
     if not np.isfinite(keypoints).all():
         raise ValueError(f"{name}.keypoints contains NaN or infinite values.")
     return keypoints, descriptors
 
 
-def _prepare(name, gray, keypoints, descriptors, method, patch_size):
+def _prepare(name, gray, keypoints, descriptors, method):
     """Return (original_indices, keypoints, descriptors, dropped_count)."""
     n = len(keypoints)
     if n == 0:
@@ -202,9 +171,7 @@ def _prepare(name, gray, keypoints, descriptors, method, patch_size):
     if descriptors is None:
         if method == "sift":
             raise ValueError(f"{name}: SIFT needs 'descriptors' with shape (N, {SIFT_DESCRIPTOR_SIZE}).")
-        descriptors, valid = extract_patch_descriptors(gray, keypoints, patch_size)
-        idx = np.flatnonzero(valid)
-        return idx, keypoints[idx], descriptors, n - len(idx)
+        raise ValueError(f"{name}: Harris needs precomputed 'descriptors' (e.g. MOPS), one per keypoint.")
 
     if descriptors.ndim != 2 or descriptors.shape[0] != n:
         raise ValueError(
@@ -240,16 +207,14 @@ def match_feature_sets(
         raise ValueError(f"method must be one of {SUPPORTED_METHODS}.")
     if metric not in SUPPORTED_METRICS:
         raise ValueError(f"metric must be one of {SUPPORTED_METRICS}.")
-    if patch_size % 2 == 0:
-        raise ValueError("patch_size must be odd.")
 
     kp1, desc1 = parse_feature_set(features1, "features1")
     kp2, desc2 = parse_feature_set(features2, "features2")
 
-    # Descriptor generation (only does real work for Harris without descriptors)
+    # Descriptor preparation/validation (no patch extraction)
     t0 = time.perf_counter()
-    idx1, pts1, d1, dropped1 = _prepare("features1", gray1, kp1, desc1, method, patch_size)
-    idx2, pts2, d2, dropped2 = _prepare("features2", gray2, kp2, desc2, method, patch_size)
+    idx1, pts1, d1, dropped1 = _prepare("features1", gray1, kp1, desc1, method)
+    idx2, pts2, d2, dropped2 = _prepare("features2", gray2, kp2, desc2, method)
     descriptor_ms = (time.perf_counter() - t0) * 1000
 
     if len(d1) and len(d2) and d1.shape[1] != d2.shape[1]:

@@ -61,6 +61,8 @@ export class FeatureWorkspaceComponent implements AfterViewInit, OnDestroy {
   cornerThreshold = 0.01;
   windowSize = 5;
   cornerMargin: number | null = null;
+  cornerOctaves = 3;
+
 
   siftContrast = 0.03;
   siftEdge = 10;
@@ -372,17 +374,19 @@ export class FeatureWorkspaceComponent implements AfterViewInit, OnDestroy {
     this.renderAll();
   }
 
-  private cornerOptions(): CornerOptions {
-    if (this.windowSize % 2 !== 1) throw new Error('NMS window size must be an odd number.');
-    return {
-      method: this.cornerMethod,
-      descriptor_method: this.descriptorMethod,
-      threshold: this.cornerThreshold,
-      window_size: this.windowSize,
-      margin: this.cornerMargin,
-      max_keypoints: null,
-    };
-  }
+private cornerOptions(): CornerOptions {
+  if (this.windowSize % 2 !== 1)
+    throw new Error('NMS window size must be an odd number.');
+
+  return {
+    method: this.cornerMethod,
+    descriptor_method: this.descriptorMethod,
+    threshold: this.cornerThreshold,
+    window_size: this.windowSize,
+    margin: this.cornerMargin,
+    num_octaves: this.cornerOctaves,
+  };
+}
 
   private siftOptions(): SiftOptions {
     return {

@@ -435,6 +435,7 @@ async def visualize_sift_endpoint(
     return response
 
 
+
 @app.post("/corners")
 async def corner_features(
     file: Optional[UploadFile] = File(None),
@@ -444,14 +445,27 @@ async def corner_features(
     window_size: int = Form(5, ge=1, le=31),
     margin: Optional[int] = Form(None, ge=0),
     max_keypoints: Optional[int] = Form(None, ge=1),
+    num_octaves: int = Form(3, ge=1),
     save_as_latest: bool = Form(False),
 ):
-    """Return match-ready keypoints and SIFT/MOPS descriptors (JSON)."""
-    image = await read_uploaded_image(file, convert_to_grayscale=False, save_as_latest=save_as_latest)
+    """Return multi-scale Harris/Lambda Minus features."""
+    image = await read_uploaded_image(
+        file,
+        convert_to_grayscale=False,
+        save_as_latest=save_as_latest
+    )
+
     try:
         return await run_in_threadpool(
-            ExtractCornerFeatures, image, method, descriptor_method,
-            threshold, window_size, margin, max_keypoints,
+            ExtractCornerFeatures,
+            image,
+            method,
+            descriptor_method,
+            threshold,
+            window_size,
+            margin,
+            max_keypoints,
+            num_octaves,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

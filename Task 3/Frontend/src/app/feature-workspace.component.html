@@ -51,6 +51,19 @@
           <label for="f-margin">Border margin <span>blank = auto</span></label>
           <input id="f-margin" type="number" [(ngModel)]="cornerMargin" min="0" placeholder="Auto"
             (ngModelChange)="onFeaturesChanged()" [disabled]="isBusy">
+
+            <div class="control-field">
+  <label for="corner-octaves">Gaussian pyramid octaves</label>
+  <input
+    id="corner-octaves"
+    type="number"
+    [(ngModel)]="cornerOctaves"
+    min="1"
+    step="1"
+    (ngModelChange)="onFeaturesChanged()"
+    [disabled]="isBusy"
+  >
+</div>
         </div>
         <div class="method-note">Harris and λ-minus share the same Sobel gradients and structure tensor. Only the response changes.</div>
       } @else {
